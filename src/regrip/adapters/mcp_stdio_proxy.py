@@ -11,6 +11,7 @@ from typing import Any
 
 from regrip.adapters.mcp_jsonrpc import MCP_SPEC_VERSION, parse_jsonrpc_tool_response
 from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.core.trace_context import extract_trace_and_actor
 from regrip.types.envelope import (
     ActorInfo,
     InteractionEnvelope,
@@ -63,7 +64,9 @@ class MCPStdioProxy:
         self._agent_id = agent_id
         self._session_id = session_id
         self._on_error = on_error
-        self._pending_calls: dict[str, tuple[float, str, dict[str, Any]]] = {}
+        self._pending_calls: dict[
+            str, tuple[float, str, dict[str, Any], dict[str, Any] | None]
+        ] = {}
         self._tool_annotations: dict[str, ToolAnnotations] = {}
 
     def _cache_tool_annotations(self, frame: dict[str, Any]) -> None:
@@ -88,11 +91,13 @@ class MCPStdioProxy:
             return
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
+        meta = params.get("_meta")
         if isinstance(tool_name, str) and isinstance(arguments, dict):
             self._pending_calls[str(frame["id"])] = (
                 time.monotonic(),
                 tool_name,
                 arguments,
+                meta if isinstance(meta, dict) else None,
             )
 
     def _record_response(self, frame: dict[str, Any]) -> None:
@@ -103,15 +108,21 @@ class MCPStdioProxy:
             self._cache_tool_annotations(frame)
             return
 
-        started, tool_name, arguments = pending
+        started, tool_name, arguments, meta = pending
         duration_ms = max(0.0, (time.monotonic() - started) * 1000.0)
+        agent_id, session_id, traceparent, tracestate = extract_trace_and_actor(
+            meta,
+            None,
+            default_agent=self._agent_id,
+            default_session=self._session_id,
+        )
         envelope = InteractionEnvelope(
             protocol=ProtocolInfo(
                 driver=ProtocolDriverKind.MCP,
                 spec_version=MCP_SPEC_VERSION,
                 transport=TransportKind.STDIO,
             ),
-            actor=ActorInfo(agent_id=self._agent_id, session_id=self._session_id),
+            actor=ActorInfo(agent_id=agent_id, session_id=session_id),
             target=TargetInfo(server_name=self._server_name),
             operation=OperationInfo(
                 method="tools/call",
@@ -120,7 +131,11 @@ class MCPStdioProxy:
             ),
             request=RequestPayload(arguments=arguments),
             response=parse_jsonrpc_tool_response(frame),
-            telemetry=TelemetryInfo(duration_ms=round(duration_ms, 3)),
+            telemetry=TelemetryInfo(
+                duration_ms=round(duration_ms, 3),
+                traceparent=traceparent,
+                tracestate=tracestate,
+            ),
         )
         try:
             self._store.save_interaction(envelope)

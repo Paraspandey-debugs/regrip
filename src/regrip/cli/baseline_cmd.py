@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from regrip.adapters.baseline_bundle import export_baseline_bundle, import_baseline_bundle
 from regrip.adapters.config_store import load_config
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.cli.formatters import format_baseline_summary
@@ -88,6 +89,48 @@ def inspect_cmd(
         else:
             typer.echo("Error: Provide either --file or both --server and --tag.", err=True)
             raise typer.Exit(code=3)
+        typer.echo(format_baseline_summary(baseline))
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@baseline_app.command("export")
+def export_cmd(
+    server: Annotated[str, typer.Option("--server", help="Server name in local store.")],
+    tag: Annotated[str, typer.Option("--tag", help="Baseline tag to export.")],
+    output: Annotated[
+        Path, typer.Option("--output", help="Destination .regrip-baseline.tar.zst path.")
+    ],
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Export a baseline as a portable .regrip-baseline.tar.zst bundle."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        baseline = store.get_baseline_by_tag(server, tag)
+        dest = export_baseline_bundle(baseline, output)
+        typer.echo(f"Exported baseline bundle to {dest}")
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@baseline_app.command("import")
+def import_cmd(
+    bundle: Annotated[Path, typer.Argument(help="Path to .regrip-baseline.tar.zst bundle.")],
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Import a .regrip-baseline.tar.zst bundle into the local SQLite store."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        baseline = import_baseline_bundle(bundle)
+        store.save_baseline(baseline)
         typer.echo(format_baseline_summary(baseline))
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)

@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 
 from regrip.adapters.config_store import load_config, write_default_config
+from regrip.adapters.mcp_http_proxy import serve_http_proxy
 from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
@@ -65,18 +66,40 @@ def record_cmd(
     server: Annotated[str, typer.Option("--server", help="Logical MCP server name.")],
     agent: Annotated[str, typer.Option("--agent", help="Calling agent ID.")] = "default-agent",
     session: Annotated[str | None, typer.Option("--session", help="Optional session ID.")] = None,
-    stdio: Annotated[bool, typer.Option("--stdio", help="Wrap a stdio MCP server command.")] = True,
+    stdio: Annotated[
+        bool, typer.Option("--stdio", help="Wrap a stdio MCP server command.")
+    ] = False,
+    listen: Annotated[
+        str | None,
+        typer.Option("--listen", help="HTTP proxy listen URL (e.g. http://127.0.0.1:9100)."),
+    ] = None,
+    upstream: Annotated[
+        str | None, typer.Option("--upstream", help="Upstream Streamable HTTP MCP URL.")
+    ] = None,
     config_path: Annotated[
         Path | None, typer.Option("--config", help="Path to regrip.yaml.")
     ] = None,
 ) -> None:
-    """Wrap an MCP server command via stdio proxy and record InteractionEnvelopes."""
-    if not stdio or not ctx.args:
-        typer.echo("Error: Provide a stdio server command after `--`.", err=True)
-        raise typer.Exit(code=3)
+    """Wrap an MCP server via stdio or Streamable HTTP proxy and record interactions."""
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
+        if listen and upstream:
+            serve_http_proxy(
+                listen,
+                upstream,
+                store=store,
+                server_name=server,
+                default_agent=agent,
+                default_session=session,
+            )
+            return
+        if not stdio and not ctx.args:
+            typer.echo(
+                "Error: Provide `--listen` + `--upstream`, or `--stdio -- <command>`.",
+                err=True,
+            )
+            raise typer.Exit(code=3)
         proxy = MCPStdioProxy(
             ctx.args,
             store=store,
