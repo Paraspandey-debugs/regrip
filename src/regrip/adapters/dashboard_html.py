@@ -32,7 +32,12 @@ DASHBOARD_HTML = """<!doctype html>
 <body>
   <header>
     <div style="display:flex;align-items:center;gap:10px">
-      <img src="/assets/regrip-04-favicon-64px.png" alt="Regrip" width="28" height="28" />
+      <img
+        src="/assets/regrip-03-circular-sticker-transparent.png"
+        alt="Regrip"
+        width="32"
+        height="32"
+      />
       <h1>Regrip Local Observability</h1>
     </div>
     <span id="health" style="color:var(--muted)">Loading...</span>
