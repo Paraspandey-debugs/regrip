@@ -1,0 +1,94 @@
+"""Typer subcommands for `regrip baseline` (argument parsing and formatting only)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from regrip.adapters.config_store import load_config
+from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.cli.formatters import format_baseline_summary
+from regrip.core.baseline_builder import build_baseline
+from regrip.types.baseline import BehavioralBaseline
+from regrip.types.errors import RegripError
+
+baseline_app = typer.Typer(help="Build and inspect behavioral baselines.")
+
+
+@baseline_app.command("build")
+def build_cmd(
+    server: Annotated[str, typer.Option("--server", help="Target MCP server name.")],
+    tag: Annotated[str, typer.Option("--tag", help="Immutable baseline version tag.")],
+    git_sha: Annotated[
+        str | None, typer.Option("--git-sha", help="Optional source git SHA.")
+    ] = None,
+    max_cases: Annotated[
+        int, typer.Option("--max-cases", help="Max representative cases per tool.")
+    ] = 50,
+    auto_noise_calibrate: Annotated[
+        bool,
+        typer.Option(
+            "--auto-noise-calibrate/--no-auto-noise-calibrate",
+            help="Automatically mask volatile UUIDs and timestamps.",
+        ),
+    ] = True,
+    output: Annotated[
+        Path | None, typer.Option("--output", help="Optional JSON export path.")
+    ] = None,
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Cluster recorded interactions into a versioned BehavioralBaseline."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        interactions = store.list_interactions(server_name=server, limit=5000)
+        baseline = build_baseline(
+            interactions,
+            server_name=server,
+            tag=tag,
+            git_sha=git_sha,
+            max_cases_per_tool=max_cases,
+            auto_noise_calibrate=auto_noise_calibrate,
+        )
+        store.save_baseline(baseline)
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(baseline.model_dump_json(indent=2), encoding="utf-8")
+        typer.echo(format_baseline_summary(baseline))
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@baseline_app.command("inspect")
+def inspect_cmd(
+    server: Annotated[
+        str | None, typer.Option("--server", help="Server name in local store.")
+    ] = None,
+    tag: Annotated[str | None, typer.Option("--tag", help="Baseline tag in local store.")] = None,
+    file: Annotated[
+        Path | None, typer.Option("--file", help="Path to exported baseline JSON.")
+    ] = None,
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Inspect inferred schemas, noise masks, and representative cases."""
+    try:
+        if file is not None:
+            baseline = BehavioralBaseline.model_validate_json(file.read_text(encoding="utf-8"))
+        elif server and tag:
+            cfg = load_config(config_path)
+            store = SQLiteStore(cfg.storage, cfg.capture)
+            baseline = store.get_baseline_by_tag(server, tag)
+        else:
+            typer.echo("Error: Provide either --file or both --server and --tag.", err=True)
+            raise typer.Exit(code=3)
+        typer.echo(format_baseline_summary(baseline))
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
