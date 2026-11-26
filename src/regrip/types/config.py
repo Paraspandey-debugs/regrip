@@ -97,7 +97,23 @@ class CIGateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sandbox: Literal["auto", "docker", "subprocess"] = "auto"
+    fail_on_severities: list[str] = Field(default_factory=lambda: ["FAIL"])
+    warn_on_severities: list[str] = Field(default_factory=lambda: ["WARN"])
     require_min_replay_coverage: float = Field(default=0.80, ge=0.0, le=1.0)
+
+
+class ConsumerToolConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumed_jsonpaths: list[str] = Field(default_factory=list)
+    order_sensitive: bool = False
+
+
+class ConsumerAgentConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    tools: dict[str, ConsumerToolConfig] = Field(default_factory=dict)
 
 
 class RegripConfig(BaseModel):
@@ -111,4 +127,5 @@ class RegripConfig(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     comparison: ComparisonConfig = Field(default_factory=ComparisonConfig)
+    consumers: list[ConsumerAgentConfig] = Field(default_factory=list)
     ci_gate: CIGateConfig = Field(default_factory=CIGateConfig)
