@@ -14,6 +14,7 @@ from regrip.types.baseline import BehavioralBaseline, ReplayRun
 from regrip.types.config import CaptureConfig, StorageConfig
 from regrip.types.envelope import InteractionEnvelope
 from regrip.types.errors import BaselineError, StorageError
+from regrip.types.impact import ConsumerContract
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS interactions (
@@ -51,6 +52,13 @@ CREATE TABLE IF NOT EXISTS replay_runs (
     started_at TEXT NOT NULL,
     completed_at TEXT,
     payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS consumer_contracts (
+    agent_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (agent_id, tool_name)
 );
 """
 
@@ -255,3 +263,28 @@ class SQLiteStore:
         except sqlite3.Error as exc:
             raise StorageError(f"Failed to list replay runs: {exc}") from exc
         return [ReplayRun.model_validate(json.loads(row[0])) for row in rows]
+
+    def save_consumer_contract(self, contract: ConsumerContract) -> None:
+        """Upsert a ConsumerContract indexed by (agent_id, tool_name)."""
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO consumer_contracts (agent_id, tool_name, payload_json)
+                    VALUES (?, ?, ?)
+                    """,
+                    (contract.agent_id, contract.tool_name, contract.model_dump_json()),
+                )
+        except sqlite3.Error as exc:
+            raise StorageError(f"Failed to save consumer contract: {exc}") from exc
+
+    def list_consumer_contracts(self) -> list[ConsumerContract]:
+        """List all persisted ConsumerContracts."""
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT payload_json FROM consumer_contracts ORDER BY agent_id, tool_name"
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"Failed to list consumer contracts: {exc}") from exc
+        return [ConsumerContract.model_validate_json(row[0]) for row in rows]

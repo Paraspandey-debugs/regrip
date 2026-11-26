@@ -96,7 +96,9 @@ def impact_cmd(
 
         interactions = store.list_interactions(server_name=base.server_name, limit=5000)
         session_contracts = infer_session_correlation_contracts(interactions)
-        contracts = merge_consumer_contracts(cfg.consumers, [], session_contracts)
+        contracts = merge_consumer_contracts(
+            cfg.consumers, store.list_consumer_contracts(), session_contracts
+        )
         volumes = dict(Counter(e.operation.tool_name for e in interactions))
         impact = compute_consumer_impact(diff_report, contracts, call_volumes=volumes)
 
@@ -147,7 +149,9 @@ def ci_cmd(
 
         interactions = store.list_interactions(server_name=base.server_name, limit=5000)
         session_contracts = infer_session_correlation_contracts(interactions)
-        contracts = merge_consumer_contracts(cfg.consumers, [], session_contracts)
+        contracts = merge_consumer_contracts(
+            cfg.consumers, store.list_consumer_contracts(), session_contracts
+        )
         volumes = dict(Counter(e.operation.tool_name for e in interactions))
         impact = compute_consumer_impact(diff_report, contracts, call_volumes=volumes)
 
@@ -170,6 +174,60 @@ def ci_cmd(
             raise typer.Exit(code=1)
         if diff_report.verdict == FindingSeverity.WARN and strict:
             raise typer.Exit(code=2)
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+def export_cmd(
+    baseline: Annotated[str, typer.Option("--baseline", help="Baseline JSON path or tag.")],
+    run_id: Annotated[str, typer.Option("--run-id", help="ReplayRun UUID to export.")],
+    server: Annotated[
+        str | None, typer.Option("--server", help="Server name for tag lookup.")
+    ] = None,
+    output_format: Annotated[
+        str, typer.Option("--format", help="Output format: json, markdown, or junit.")
+    ] = "markdown",
+    output: Annotated[
+        Path | None, typer.Option("--output", help="Optional destination file path.")
+    ] = None,
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Export a replay diff & consumer impact report as JSON, Markdown, or JUnit XML."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        base = _load_baseline_file_or_tag(baseline, server, store)
+        run = store.get_replay_run(UUID(run_id))
+        diff_report = diff_baseline_against_run(base, run, cfg.comparison)
+        interactions = store.list_interactions(server_name=base.server_name, limit=5000)
+        contracts = merge_consumer_contracts(
+            cfg.consumers,
+            store.list_consumer_contracts(),
+            infer_session_correlation_contracts(interactions),
+        )
+        volumes = dict(Counter(e.operation.tool_name for e in interactions))
+        impact = compute_consumer_impact(diff_report, contracts, call_volumes=volumes)
+
+        fmt = output_format.strip().lower()
+        if fmt == "json":
+            rendered = render_json_report(base, run, diff_report, impact)
+        elif fmt == "markdown":
+            rendered = render_markdown_pr_comment(base, run, diff_report, impact)
+        elif fmt == "junit":
+            rendered = render_junit_xml(diff_report)
+        else:
+            typer.echo(f"Error: Unsupported export format '{output_format}'.", err=True)
+            raise typer.Exit(code=3)
+
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered, encoding="utf-8")
+            typer.echo(f"Exported {fmt} report to {output}")
+        else:
+            typer.echo(rendered)
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc

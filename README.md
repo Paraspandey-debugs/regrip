@@ -68,6 +68,7 @@ regrip serve --port 8787
 | `regrip diff` | Run the 9-category deterministic diff engine against a run or baseline |
 | `regrip impact` | Compute per-agent `UNAFFECTED` / `POTENTIALLY_BROKEN` / `CONFIRMED_REGRESSION` matrix |
 | `regrip ci` | Execute replay + diff + impact gate with deterministic exit codes (`0`/`1`/`2`/`3`) |
+| `regrip export` | Export a stored replay report in JSON, Markdown, or JUnit XML format |
 | `regrip history` | Query chronological failure rates, git SHAs, top args, and consumers per tool |
 | `regrip serve` | Start local REST API (`/api/v1/*`) and Web Dashboard on `http://127.0.0.1:8787` |
 

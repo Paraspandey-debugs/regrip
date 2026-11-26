@@ -139,3 +139,25 @@ def test_cli_init_baseline_and_replay(tmp_path: Path) -> None:
         ],
     )
     assert res_blocked.exit_code == 3
+
+    runs = store.list_replay_runs()
+    assert len(runs) == 1
+    out_md = tmp_path / "exported.md"
+    res_export = runner.invoke(
+        app,
+        [
+            "export",
+            "--baseline",
+            str(out_json),
+            "--run-id",
+            str(runs[0].run_id),
+            "--format",
+            "markdown",
+            "--output",
+            str(out_md),
+            "--config",
+            str(cfg_path),
+        ],
+    )
+    assert res_export.exit_code == 0, res_export.output
+    assert "<!-- regrip-report -->" in out_md.read_text(encoding="utf-8")

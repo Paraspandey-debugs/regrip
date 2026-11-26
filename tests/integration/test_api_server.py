@@ -91,6 +91,13 @@ async def test_api_server_ingest_baseline_report_and_dashboard(tmp_path: Path) -
         assert r_base.status_code == 201
         baseline_data = r_base.json()
 
+        r_contract = await client.put(
+            "/api/v1/projects/demo/agents/support-agent/contracts",
+            json={"tool_name": "get_balance", "consumed_jsonpaths": ["$.balance"]},
+        )
+        assert r_contract.status_code == 200
+        assert r_contract.json()["agent_id"] == "support-agent"
+
         run = ReplayRun(
             baseline_id=baseline_data["baseline_id"],
             baseline_tag="v1",
@@ -111,13 +118,19 @@ async def test_api_server_ingest_baseline_report_and_dashboard(tmp_path: Path) -
                 )
             ],
         )
-        store.save_replay_run(run)
+        r_post_run = await client.post(
+            "/api/v1/projects/demo/runs",
+            json={"run": run.model_dump(mode="json")},
+        )
+        assert r_post_run.status_code == 201
 
         r_report = await client.get(f"/api/v1/projects/demo/runs/{run.run_id}/report")
         assert r_report.status_code == 200
         report = r_report.json()
         assert report["verdict"] == "FAIL"
-        assert report["agent_impacts"][0]["impact_status"] == "CONFIRMED_REGRESSION"
+        impacts = {a["agent_id"]: a["impact_status"] for a in report["agent_impacts"]}
+        assert impacts["pricing-bot"] == "CONFIRMED_REGRESSION"
+        assert impacts["support-agent"] == "CONFIRMED_REGRESSION"
 
         r_hist = await client.get("/api/v1/projects/demo/tools/get_balance/history")
         assert r_hist.status_code == 200

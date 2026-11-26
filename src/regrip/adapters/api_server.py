@@ -15,6 +15,7 @@ from starlette.routing import Route
 
 from regrip import __version__
 from regrip.adapters.dashboard_html import DASHBOARD_HTML
+from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.core.baseline_builder import build_baseline
 from regrip.core.consumer_impact import (
@@ -24,9 +25,11 @@ from regrip.core.consumer_impact import (
 )
 from regrip.core.detectors import diff_baseline_against_run
 from regrip.core.history_analyzer import build_tool_history
+from regrip.types.baseline import ReplayRun
 from regrip.types.config import RegripConfig
 from regrip.types.envelope import InteractionEnvelope
 from regrip.types.errors import RegripError
+from regrip.types.impact import ConsumerContract, ContractDiscoverySource
 
 _ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets"
 
@@ -96,9 +99,46 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
                 return JSONResponse(item.model_dump(mode="json"))
         return JSONResponse({"error": "Baseline not found"}, status_code=404)
 
-    async def list_runs(_request: Request) -> JSONResponse:
-        runs = [r.model_dump(mode="json") for r in store.list_replay_runs()]
-        return JSONResponse(runs)
+    async def runs_endpoint(request: Request) -> JSONResponse:
+        if request.method == "GET":
+            runs = [r.model_dump(mode="json") for r in store.list_replay_runs()]
+            return JSONResponse(runs)
+        body: Any = await request.json()
+        if isinstance(body, dict) and "run" in body:
+            run_obj = ReplayRun.model_validate(body["run"])
+            store.save_replay_run(run_obj)
+            return JSONResponse(run_obj.model_dump(mode="json"), status_code=201)
+        tag = str(body["baseline_tag"])
+        server = body.get("server_name")
+        baseline = (
+            store.get_baseline_by_tag(str(server), tag)
+            if server
+            else _find_baseline_for_run(store, UUID(int=0), tag)
+        )
+        if baseline is None:
+            return JSONResponse({"error": "Baseline not found"}, status_code=404)
+        runner = ReplayRunner(config, store=store)
+        run_obj = await runner.run(
+            baseline,
+            str(body["target_uri"]),
+            allow_mutations=bool(body.get("allow_mutations", False)),
+            target_git_sha=body.get("target_git_sha"),
+            sandbox=body.get("sandbox"),
+        )
+        return JSONResponse(run_obj.model_dump(mode="json"), status_code=201)
+
+    async def upsert_contract(request: Request) -> JSONResponse:
+        agent_key = request.path_params["agent_key"]
+        body: Any = await request.json()
+        contract = ConsumerContract(
+            agent_id=agent_key,
+            tool_name=str(body["tool_name"]),
+            consumed_jsonpaths=list(body.get("consumed_jsonpaths", [])),
+            order_sensitive=bool(body.get("order_sensitive", False)),
+            discovery_source=ContractDiscoverySource.EXPLICIT_SDK,
+        )
+        store.save_consumer_contract(contract)
+        return JSONResponse(contract.model_dump(mode="json"))
 
     async def get_run_report(request: Request) -> JSONResponse:
         run_id = UUID(request.path_params["run_id"])
@@ -112,7 +152,9 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         diff_report = diff_baseline_against_run(baseline, run, config.comparison)
         envs = store.list_interactions(server_name=baseline.server_name, limit=5000)
         contracts = merge_consumer_contracts(
-            config.consumers, [], infer_session_correlation_contracts(envs)
+            config.consumers,
+            store.list_consumer_contracts(),
+            infer_session_correlation_contracts(envs),
         )
         volumes = dict(Counter(e.operation.tool_name for e in envs))
         impact = compute_consumer_impact(diff_report, contracts, call_volumes=volumes)
@@ -153,7 +195,12 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
                 get_baseline,
                 methods=["GET"],
             ),
-            Route("/api/v1/projects/{slug}/runs", list_runs, methods=["GET"]),
+            Route("/api/v1/projects/{slug}/runs", runs_endpoint, methods=["GET", "POST"]),
+            Route(
+                "/api/v1/projects/{slug}/agents/{agent_key}/contracts",
+                upsert_contract,
+                methods=["PUT"],
+            ),
             Route(
                 "/api/v1/projects/{slug}/runs/{run_id}/report",
                 get_run_report,
