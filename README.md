@@ -58,20 +58,28 @@ Running Regrip against two published versions of the official `@modelcontextprot
 bash examples/real_world_filesystem.sh
 ```
 
-```markdown
-## Regrip Compatibility Report — 15 Fail, 0 Warn
-Target: npx --offline @modelcontextprotocol/server-filesystem@2025.11.25
-vs Baseline: fs-mcp (2025.3.28) · Safe Replay: 2/2 cases executed
+```text
+ FAIL   regrip ci · fs-mcp@2025.3.28
+  candidate: npx --offline @modelcontextprotocol/server-filesystem@2025.11.25
+  replay: 2/2 executed · 0 skipped · 0 errored
 
-| Tool | Status | Category | Consumer Impact | Summary |
-| :--- | :--- | :--- | :--- | :--- |
-| `read_file` | FAIL | Output + Schema | `coding-assistant`: **UNAFFECTED** | Input parameter `path` became required; `$.hello` missing |
-| `list_directory` | FAIL | Schema | `coding-assistant`: **UNAFFECTED** | Input parameter `path` became required |
-| `edit_file` | FAIL | Schema | No registered consumers | Input parameters `edits`, `path` became required |
-| `move_file` | FAIL | Schema | No registered consumers | Input parameters `destination`, `source` became required |
+  create_directory
+    FAIL  Schema     $.inputSchema.required.path
+          Input parameter 'path' became required
+  edit_file
+    FAIL  Schema     $.inputSchema.required.edits
+          Input parameter 'edits' became required
+  list_directory
+    FAIL  Schema     $.inputSchema.required.path
+          Input parameter 'path' became required
+  read_file
+    FAIL  Schema     $.inputSchema.required.path
+          Input parameter 'path' became required
+    FAIL  Output     $.hello
+          Field '$.hello' missing (present in 100% of baseline)
 ```
 
-Regrip catches the exact schema tightening and output envelope shift between `2025.3.28` and `2025.11.25`, while confirming `coding-assistant` is `UNAFFECTED` because its recorded calls already supply `path` and read `$.content[0].text`.
+Regrip catches the exact schema tightening and output envelope shift between `2025.3.28` and `2025.11.25` (15 findings across 10 tools), while confirming `coding-assistant` is `UNAFFECTED` because its recorded calls already supply `path` and read `$.content[0].text`.
 
 ---
 
