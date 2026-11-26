@@ -32,11 +32,18 @@ git clone https://github.com/Paraspandey-debugs/regrip && cd regrip
 bash examples/run_demo.sh   # records v1 → builds baseline → diffs v2 → opens dashboard
 ```
 
-**What the demo shows:** `finance-mcp` v2 ships two silent regressions:
+**What the demo shows:** `commerce-mcp` v2 ships silent regressions caught before release:
 
-![Regrip CI gate output showing two confirmed regressions](assets/demo-ci-output.svg)
+![Regrip Behavioral Diff Dashboard showing 4 findings and Agent Dependency Graph](assets/dashboard-screenshot.png)
 
 Both agents (`support-agent`, `pricing-bot`) are flagged **CONFIRMED_REGRESSION** with exact field-level evidence — no flakiness, no LLM opinion.
+
+<details>
+<summary>CLI / GitHub Action CI gate output</summary>
+
+![Regrip CI gate terminal output](assets/demo-ci-output.svg)
+
+</details>
 
 ---
 
