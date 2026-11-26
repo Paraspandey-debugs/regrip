@@ -195,6 +195,18 @@ class SQLiteStore:
             )
         return BehavioralBaseline.model_validate_json(row[0])
 
+    def list_baselines(self, *, limit: int = 100) -> list[BehavioralBaseline]:
+        """List stored BehavioralBaselines ordered by creation time."""
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT payload_json FROM baselines ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"Failed to list baselines: {exc}") from exc
+        return [BehavioralBaseline.model_validate_json(row[0]) for row in rows]
+
     def save_replay_run(self, run: ReplayRun) -> None:
         """Persist a completed ReplayRun."""
         try:

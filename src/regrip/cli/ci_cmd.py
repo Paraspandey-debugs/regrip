@@ -10,6 +10,7 @@ from uuid import UUID
 
 import typer
 
+from regrip.adapters.api_server import serve_api_server
 from regrip.adapters.config_store import load_config
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
@@ -204,6 +205,24 @@ def history_cmd(
                 f"  - {ev.started_at} baseline={ev.baseline_tag} sha={ev.target_git_sha or '-'} "
                 f"failed={ev.failed_cases}/{ev.total_cases}"
             )
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+def serve_cmd(
+    host: Annotated[str, typer.Option("--host", help="Bind host.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Bind port.")] = 8787,
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Start local REST API + Web Dashboard (default :8787)."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        typer.echo(f"Serving Regrip Dashboard at http://{host}:{port}")
+        serve_api_server(cfg, store, host=host, port=port)
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
