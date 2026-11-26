@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/regrip-02-horizontal-lockup-transparent.png" alt="Regrip" width="420" />
+</p>
+
 # Regrip
 
 **Know what breaks before your agents do. Test the behavior, not just the schema.**

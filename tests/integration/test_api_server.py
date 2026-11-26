@@ -68,6 +68,14 @@ async def test_api_server_ingest_baseline_report_and_dashboard(tmp_path: Path) -
         assert r_dash.status_code == 200
         assert "Regrip Local Observability" in r_dash.text
 
+        r_icon = await client.get("/favicon.ico")
+        assert r_icon.status_code == 200
+        assert r_icon.headers["content-type"] == "image/png"
+
+        r_asset = await client.get("/assets/regrip-04-favicon-32px.png")
+        assert r_asset.status_code == 200
+        assert len(r_asset.content) > 0
+
         r_ingest = await client.post(
             "/api/v1/projects/demo/interactions",
             json={"envelopes": [env.model_dump(mode="json")]},

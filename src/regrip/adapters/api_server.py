@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from regrip import __version__
@@ -27,6 +28,8 @@ from regrip.types.config import RegripConfig
 from regrip.types.envelope import InteractionEnvelope
 from regrip.types.errors import RegripError
 
+_ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets"
+
 
 def _find_baseline_for_run(store: SQLiteStore, baseline_id: UUID, tag: str) -> Any:
     for b in store.list_baselines(limit=500):
@@ -40,6 +43,19 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
 
     async def dashboard(_request: Request) -> HTMLResponse:
         return HTMLResponse(DASHBOARD_HTML)
+
+    async def serve_asset(request: Request) -> Response:
+        filename = Path(request.path_params["filename"]).name
+        asset_path = _ASSETS_DIR / filename
+        if filename != request.path_params["filename"] or not asset_path.is_file():
+            return JSONResponse({"error": "Asset not found"}, status_code=404)
+        return Response(content=asset_path.read_bytes(), media_type="image/png")
+
+    async def favicon(_request: Request) -> Response:
+        icon_path = _ASSETS_DIR / "regrip-04-favicon-32px.png"
+        if not icon_path.is_file():
+            return Response(status_code=404)
+        return Response(content=icon_path.read_bytes(), media_type="image/png")
 
     async def health(_request: Request) -> JSONResponse:
         return JSONResponse(
@@ -119,6 +135,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
     return Starlette(
         routes=[
             Route("/", dashboard, methods=["GET"]),
+            Route("/favicon.ico", favicon, methods=["GET"]),
+            Route("/assets/{filename}", serve_asset, methods=["GET"]),
             Route("/api/v1/health", health, methods=["GET"]),
             Route(
                 "/api/v1/projects/{slug}/interactions",

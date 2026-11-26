@@ -8,6 +8,8 @@ DASHBOARD_HTML = """<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Regrip — MCP Behavioral Regression Dashboard</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/regrip-04-favicon-32px.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/regrip-04-favicon-16px.png" />
   <style>
     :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
             --ok:#22c55e; --warn:#f59e0b; --fail:#ef4444; --accent:#38bdf8; }
@@ -29,7 +31,10 @@ DASHBOARD_HTML = """<!doctype html>
 </head>
 <body>
   <header>
-    <h1>Regrip Local Observability</h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <img src="/assets/regrip-04-favicon-64px.png" alt="Regrip" width="28" height="28" />
+      <h1>Regrip Local Observability</h1>
+    </div>
     <span id="health" style="color:var(--muted)">Loading...</span>
   </header>
   <main>
