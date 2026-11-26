@@ -162,3 +162,19 @@ async def test_mcp_stdio_proxy_record_baseline_and_replay(tmp_path: Path) -> Non
     assert run_v2.summary.failed == 1
     failed_case = next(r for r in run_v2.results if r.status == ReplayCaseStatus.FAIL)
     assert failed_case.diff_paths == ["$.balance"]
+
+
+async def test_mcp_stdio_proxy_handles_immediate_child_exit(tmp_path: Path) -> None:
+    store = SQLiteStore(
+        StorageConfig(dsn=f"sqlite:///{tmp_path / 'regrip.db'}", blob_dir=str(tmp_path / "blobs"))
+    )
+    proxy = MCPStdioProxy(
+        [sys.executable, "-c", "import sys; sys.exit(2)"],
+        store=store,
+        server_name="broken-srv",
+    )
+    in_reader = asyncio.StreamReader()
+    in_reader.feed_data(b'{"jsonrpc":"2.0","id":1,"method":"initialize"}\n' * 50)
+    in_reader.feed_eof()
+    rc = await proxy.run(in_stream=in_reader, out_writer=io.BytesIO())
+    assert rc == 2

@@ -1,0 +1,43 @@
+version: "1.0"
+project: demo-commerce
+
+storage:
+  mode: local
+  dsn: "sqlite:///.regrip/regrip.db"
+  blob_dir: ".regrip/blobs"
+
+safety:
+  trust_mcp_annotations: false
+  default_tier: WRITE_BLOCKED
+  blocked_target_patterns:
+    - "*prod*"
+    - "https://api.live.*"
+  tool_policies:
+    get_balance:
+      tier: READ_SAFE
+      probe_idempotency: true
+    search_products:
+      tier: READ_SAFE
+
+comparison:
+  numeric_relative_tolerance: 0.05
+  detect_unit_scaling: true
+  tool_overrides:
+    search_products:
+      order_sensitive: true
+      top_k_critical: 1
+      kendall_tau_min: 0.70
+
+consumers:
+  - agent_id: pricing-bot
+    tools:
+      search_products:
+        consumed_jsonpaths: ["$.results[*].id", "$.results[*].price"]
+        order_sensitive: false
+  - agent_id: support-agent
+    tools:
+      search_products:
+        consumed_jsonpaths: ["$.results[*].id", "$.results[*].description"]
+        order_sensitive: true
+      get_balance:
+        consumed_jsonpaths: ["$.balance", "$.currency"]
