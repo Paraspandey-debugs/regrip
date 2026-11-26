@@ -16,6 +16,7 @@ from regrip.adapters.config_store import load_config
 from regrip.adapters.remote_store import open_store
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.cli.formatters import format_ci_terminal_report
 from regrip.core.consumer_impact import (
     compute_consumer_impact,
     infer_session_correlation_contracts,
@@ -151,11 +152,14 @@ def ci_cmd(
         if "markdown" in selected:
             md = render_markdown_pr_comment(base, run, diff_report, impact)
             (out_dir / "regrip-report.md").write_text(md, encoding="utf-8")
-            typer.echo(md)
         if "junit" in selected:
             (out_dir / "regrip-junit.xml").write_text(
                 render_junit_xml(diff_report), encoding="utf-8"
             )
+
+        typer.echo(
+            format_ci_terminal_report(base, run, diff_report, impact, report_dir=str(out_dir))
+        )
 
         if diff_report.verdict == FindingSeverity.FAIL or run.summary.errored > 0:
             raise typer.Exit(code=1)

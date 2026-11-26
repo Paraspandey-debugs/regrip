@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 from regrip.types.baseline import BehavioralBaseline, ReplayRun
-from regrip.types.diff import DiffReport, FindingSeverity
+from regrip.types.diff import DiffReport, FindingSeverity, RegressionFinding
 from regrip.types.impact import AgentImpactEntry, ImpactReport
 
 
@@ -32,60 +32,144 @@ def render_json_report(
     return json.dumps(payload, indent=2, sort_keys=True)
 
 
+_SEV_ICON = {"FAIL": "\u274c", "WARN": "\u26a0\ufe0f", "PASS": "\u2705"}
+_IMPACT_ICON = {
+    "CONFIRMED_REGRESSION": "\U0001f534",
+    "POTENTIALLY_BROKEN": "\U0001f7e1",
+    "UNAFFECTED": "\U0001f7e2",
+}
+
+
+def _cell(text: object) -> str:
+    """Escape a value for use inside a markdown table cell."""
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _render_tools_section(
+    all_tools: list[str],
+    findings_by_tool: dict[str, list[RegressionFinding]],
+    impacts_by_tool: dict[str, list[AgentImpactEntry]],
+) -> list[str]:
+    lines = [
+        "### Tools",
+        "",
+        "| Tool | Status | Findings | Consumers |",
+        "| :--- | :---: | :---: | :--- |",
+    ]
+    for tool in all_tools:
+        t_findings = findings_by_tool.get(tool, [])
+        if any(f.severity == FindingSeverity.FAIL for f in t_findings):
+            status = "FAIL"
+        elif t_findings:
+            status = "WARN"
+        else:
+            status = "PASS"
+        consumers = (
+            " \u00b7 ".join(
+                f"{_IMPACT_ICON[e.impact_status.value]} `{e.agent_id}`"
+                for e in impacts_by_tool.get(tool, [])
+            )
+            or "\u2014"
+        )
+        count = str(len(t_findings)) if t_findings else "\u2014"
+        lines.append(f"| `{tool}` | {_SEV_ICON[status]} {status} | {count} | {consumers} |")
+    return lines
+
+
+def _render_findings_details(findings_by_tool: dict[str, list[RegressionFinding]]) -> list[str]:
+    lines = ["", "### What changed", ""]
+    for tool in sorted(findings_by_tool):
+        items = findings_by_tool[tool]
+        lines += [
+            "<details open>",
+            f"<summary><b><code>{tool}</code></b> \u2014 {_plural(len(items), 'finding')}"
+            "</summary>",
+            "",
+            "| Severity | Category | Path | Detail |",
+            "| :---: | :--- | :--- | :--- |",
+        ]
+        for f in items:
+            lines.append(
+                f"| {_SEV_ICON[f.severity.value]} {f.severity.value} | {f.category.value} "
+                f"| `{_cell(f.json_path)}` | {_cell(f.deterministic_reason)} |"
+            )
+        lines += ["", "</details>", ""]
+    return lines
+
+
+def _render_agent_impact_section(impact_report: ImpactReport) -> list[str]:
+    broken = [e for e in impact_report.agent_impacts if e.impact_status.value != "UNAFFECTED"]
+    if not broken:
+        return []
+    lines = ["### Agent impact", "", "| Agent | Tool | Verdict | Fields relied on |"]
+    lines.append("| :--- | :--- | :--- | :--- |")
+    for e in sorted(broken, key=lambda x: (x.agent_id, x.tool_name)):
+        fields = ", ".join(f"`{p}`" for p in e.matched_jsonpaths) or "\u2014"
+        lines.append(
+            f"| `{e.agent_id}` | `{e.tool_name}` | "
+            f"{_IMPACT_ICON[e.impact_status.value]} {e.impact_status.value} | {fields} |"
+        )
+    lines.append("")
+    return lines
+
+
 def render_markdown_pr_comment(
     baseline: BehavioralBaseline,
     run: ReplayRun,
     diff_report: DiffReport,
     impact_report: ImpactReport,
 ) -> str:
-    """Render sticky PR comment format with `<!-- regrip-report -->` marker."""
+    """Render sticky PR comment with the `<!-- regrip-report -->` marker (FR-CICD-002)."""
     s = run.summary
     executed = s.total - s.skipped_unsafe
     fail_cnt = diff_report.summary_counts.get(FindingSeverity.FAIL.value, 0)
     warn_cnt = diff_report.summary_counts.get(FindingSeverity.WARN.value, 0)
+    verdict = diff_report.verdict.value
 
-    lines = [
-        "<!-- regrip-report -->",
-        f"## Regrip Compatibility Report — {fail_cnt} Fail, {warn_cnt} Warn",
-        f"**Target:** `{run.target_uri}` vs "
-        f"**Baseline:** `{baseline.server_name} ({baseline.tag})` "
-        f"· **Safe Replay:** `{executed}/{s.total}` cases executed "
-        f"(`{s.skipped_unsafe}` write-blocked skipped)",
-        "",
-        "| Tool | Status | Category | Consumer Impact | Summary |",
-        "| :--- | :--- | :--- | :--- | :--- |",
-    ]
-
-    findings_by_tool = defaultdict(list)
+    findings_by_tool: dict[str, list[RegressionFinding]] = defaultdict(list)
     for f in diff_report.findings:
         findings_by_tool[f.tool_name].append(f)
-
     impacts_by_tool: dict[str, list[AgentImpactEntry]] = defaultdict(list)
     for entry in impact_report.agent_impacts:
         impacts_by_tool[entry.tool_name].append(entry)
-
+    affected_agents = {
+        e.agent_id for e in impact_report.agent_impacts if e.impact_status.value != "UNAFFECTED"
+    }
     all_tools = sorted({c.tool_name for c in baseline.cases} | set(findings_by_tool))
-    for tool in all_tools:
-        t_findings = findings_by_tool.get(tool, [])
-        if not t_findings:
-            status = "PASS"
-            cats = "—"
-            summary = "Matched baseline within tolerance"
-        else:
-            status = (
-                "FAIL" if any(f.severity == FindingSeverity.FAIL for f in t_findings) else "WARN"
-            )
-            cats = " + ".join(sorted({f.category.value for f in t_findings}))
-            summary = "; ".join(f.deterministic_reason for f in t_findings[:2])
 
-        t_impacts = impacts_by_tool.get(tool, [])
-        impact_str = (
-            ", ".join(f"`{e.agent_id}`: **{e.impact_status.value}**" for e in t_impacts)
-            if t_impacts
-            else "No registered consumers"
+    if verdict == "PASS":
+        title = f"{_SEV_ICON['PASS']} Regrip: no behavioral regressions"
+    else:
+        counts = [_plural(fail_cnt, "failure")] if fail_cnt else []
+        if warn_cnt:
+            counts.append(_plural(warn_cnt, "warning"))
+        title = (
+            f"{_SEV_ICON[verdict]} Regrip: {' and '.join(counts)} in "
+            f"{_plural(len(findings_by_tool), 'tool')} \u00b7 "
+            f"{_plural(len(affected_agents), 'agent')} affected"
         )
-        lines.append(f"| `{tool}` | {status} | {cats} | {impact_str} | {summary} |")
 
+    lines = [
+        "<!-- regrip-report -->",
+        f"## {title}",
+        "",
+        "| | |",
+        "| :--- | :--- |",
+        f"| **Baseline** | `{baseline.server_name} @ {baseline.tag}` |",
+        f"| **Candidate** | `{_cell(run.target_uri)}` |",
+        f"| **Safe replay** | {executed}/{s.total} cases executed"
+        f" \u00b7 {s.skipped_unsafe} write-blocked skipped |",
+        "",
+        *_render_tools_section(all_tools, findings_by_tool, impacts_by_tool),
+    ]
+    if diff_report.findings:
+        lines.extend(_render_findings_details(findings_by_tool))
+    lines.extend(_render_agent_impact_section(impact_report))
+    lines.append("<sub>Deterministic result \u2014 no LLM was used to decide pass/fail.</sub>")
     return "\n".join(lines) + "\n"
 
 
