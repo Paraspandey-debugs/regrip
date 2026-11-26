@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use regrip_proxy::config_loader::{load_proxy_settings, LoadedProxySettings};
-use regrip_proxy::http_proxy::run_http_proxy;
+use regrip_proxy::http_proxy::run_http_proxy_with_tls;
 use regrip_proxy::stdio_proxy::{run_stdio_proxy, ProxyConfig};
 
 #[derive(Debug, Parser)]
@@ -28,6 +28,8 @@ struct Args {
     listen: Option<String>,
     #[arg(long, requires = "listen")]
     upstream: Option<String>,
+    #[arg(long)]
+    ca_cert: Option<PathBuf>,
     #[arg(last = true, required_unless_present = "listen")]
     command: Vec<String>,
 }
@@ -62,7 +64,9 @@ async fn main() {
     };
 
     if let (Some(listen), Some(upstream)) = (args.listen, args.upstream) {
-        if let Err(err) = run_http_proxy(&listen, &upstream, cfg).await {
+        if let Err(err) =
+            run_http_proxy_with_tls(&listen, &upstream, cfg, args.ca_cert.as_deref()).await
+        {
             eprintln!("regrip-proxy http error: {err}");
             std::process::exit(3);
         }

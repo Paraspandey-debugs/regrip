@@ -2,6 +2,7 @@
 
 use std::convert::Infallible;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http::{Request, Response};
@@ -9,13 +10,15 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
+use rustls::pki_types::PrivateKeyDer;
 use serde_json::{json, Value};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 
 use regrip_proxy::config_loader::load_proxy_settings;
 use regrip_proxy::hmac_redactor::RedactionAction;
-use regrip_proxy::http_proxy::run_http_proxy_on_listener;
+use regrip_proxy::http_proxy::{run_http_proxy_on_listener, run_http_proxy_on_listener_with_tls};
 use regrip_proxy::stdio_proxy::ProxyConfig;
 
 async fn spawn_mock_upstream() -> String {
@@ -189,5 +192,114 @@ async fn loads_yaml_rules_and_proxies_json_and_sse_with_redaction() {
         assert!(decoded.contains("rust-proxy-agent"));
     }
 
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
+async fn proxies_https_upstream_with_custom_ca_cert() {
+    let cert_key = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_pem = cert_key.cert.pem();
+    let cert_der = cert_key.cert.der().clone();
+    let key_der = PrivateKeyDer::try_from(cert_key.key_pair.serialize_der()).unwrap();
+
+    let server_tls = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(vec![cert_der], key_der)
+    .unwrap();
+    let acceptor = TlsAcceptor::from(Arc::new(server_tls));
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let acceptor = acceptor.clone();
+            tokio::spawn(async move {
+                let Ok(tls_stream) = acceptor.accept(stream).await else {
+                    return;
+                };
+                let svc = service_fn(|req: Request<Incoming>| async move {
+                    let bytes = req.into_body().collect().await.unwrap().to_bytes();
+                    let rpc: Value = serde_json::from_slice(&bytes).unwrap();
+                    let id = rpc.get("id").cloned().unwrap_or(json!(1));
+                    let resp_body = json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "isError": false,
+                            "structuredContent": {"secret_note": "Bearer tlssecret123456", "tls": true}
+                        }
+                    });
+                    Ok::<_, Infallible>(
+                        Response::builder()
+                            .status(200)
+                            .header("content-type", "application/json")
+                            .body(Full::new(Bytes::from(resp_body.to_string())))
+                            .unwrap(),
+                    )
+                });
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(TokioIo::new(tls_stream), svc)
+                    .await;
+            });
+        }
+    });
+
+    let tmp_dir = std::env::temp_dir().join(format!("regrip-rs-https-{}", Uuid::new_v4()));
+    let blob_dir = tmp_dir.join("blobs");
+    std::fs::create_dir_all(&blob_dir).unwrap();
+    let ca_path = tmp_dir.join("ca.pem");
+    std::fs::write(&ca_path, cert_pem).unwrap();
+
+    let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_addr = proxy_listener.local_addr().unwrap().to_string();
+    let upstream_url = format!("https://localhost:{port}/mcp");
+    let cfg = ProxyConfig {
+        server_name: "https-mcp".to_string(),
+        agent_id: "tls-agent".to_string(),
+        session_id: None,
+        blob_dir: blob_dir.clone(),
+        hmac_secret: "unit-test-secret".to_string(),
+        rules: Vec::new(),
+    };
+    tokio::spawn(async move {
+        let _ =
+            run_http_proxy_on_listener_with_tls(proxy_listener, &upstream_url, cfg, Some(&ca_path))
+                .await;
+    });
+
+    let (ct, body) = post_mcp(
+        &proxy_addr,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "tls_ping", "arguments": {"ok": true}}
+        }),
+    )
+    .await;
+    assert!(ct.contains("application/json"));
+    assert!(body.contains("\"tls\":true"));
+
+    for _ in 0..20 {
+        let count = std::fs::read_dir(&blob_dir).map(|d| d.count()).unwrap_or(0);
+        if count >= 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let blob = std::fs::read_dir(&blob_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let raw = zstd::stream::decode_all(std::fs::read(&blob).unwrap().as_slice()).unwrap();
+    let decoded = String::from_utf8(raw).unwrap();
+    assert!(!decoded.contains("tlssecret123456"));
+    assert!(decoded.contains("[REDACTED:BEARER]"));
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }

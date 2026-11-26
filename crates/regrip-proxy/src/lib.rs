@@ -6,4 +6,5 @@ pub mod hmac_redactor;
 pub mod http_codec;
 pub mod http_proxy;
 pub mod stdio_proxy;
+pub mod tls_client;
 pub mod zstd_sink;

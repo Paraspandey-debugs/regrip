@@ -1,17 +1,18 @@
 //! High-speed hyper Streamable HTTP & SSE capture proxy (FR-CAP-002, NFR-REL-001).
 
 use std::convert::Infallible;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http::{HeaderMap, Request, Response, StatusCode, Uri};
+use http::{Request, Response, StatusCode, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Frame, Incoming};
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use serde_json::Value;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::envelope::InteractionEnvelope;
@@ -21,9 +22,17 @@ use crate::http_codec::{
     filter_response_headers, RequestMeta,
 };
 use crate::stdio_proxy::ProxyConfig;
+use crate::tls_client::{build_upstream_client, send_upstream_request, UpstreamClient};
 use crate::zstd_sink::write_zstd_envelope;
 
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
+
+struct ProxyState {
+    upstream: Uri,
+    config: ProxyConfig,
+    client: UpstreamClient,
+    tx: mpsc::Sender<InteractionEnvelope>,
+}
 
 /// Bind `listen_addr` and serve the Streamable HTTP / SSE capture proxy.
 pub async fn run_http_proxy(
@@ -31,10 +40,20 @@ pub async fn run_http_proxy(
     upstream_url: &str,
     config: ProxyConfig,
 ) -> Result<(), String> {
+    run_http_proxy_with_tls(listen_addr, upstream_url, config, None).await
+}
+
+/// Bind `listen_addr` and serve the HTTP/HTTPS capture proxy with optional custom CA PEM.
+pub async fn run_http_proxy_with_tls(
+    listen_addr: &str,
+    upstream_url: &str,
+    config: ProxyConfig,
+    ca_cert: Option<&Path>,
+) -> Result<(), String> {
     let listener = TcpListener::bind(listen_addr)
         .await
         .map_err(|e| format!("Failed to bind {listen_addr}: {e}"))?;
-    run_http_proxy_on_listener(listener, upstream_url, config).await
+    run_http_proxy_on_listener_with_tls(listener, upstream_url, config, ca_cert).await
 }
 
 /// Serve the HTTP capture proxy on an already-bound TcpListener.
@@ -43,9 +62,20 @@ pub async fn run_http_proxy_on_listener(
     upstream_url: &str,
     config: ProxyConfig,
 ) -> Result<(), String> {
+    run_http_proxy_on_listener_with_tls(listener, upstream_url, config, None).await
+}
+
+/// Serve the HTTP/HTTPS capture proxy on a bound TcpListener with optional custom CA PEM.
+pub async fn run_http_proxy_on_listener_with_tls(
+    listener: TcpListener,
+    upstream_url: &str,
+    config: ProxyConfig,
+    ca_cert: Option<&Path>,
+) -> Result<(), String> {
     let upstream: Uri = upstream_url
         .parse()
         .map_err(|e| format!("Invalid upstream URL '{upstream_url}': {e}"))?;
+    let client = build_upstream_client(ca_cert)?;
     let (tx, mut rx) = mpsc::channel::<InteractionEnvelope>(1024);
     let sink_cfg = config.clone();
     tokio::spawn(async move {
@@ -55,7 +85,12 @@ pub async fn run_http_proxy_on_listener(
         }
     });
 
-    let state = Arc::new((upstream, config, tx));
+    let state = Arc::new(ProxyState {
+        upstream,
+        config,
+        client,
+        tx,
+    });
     loop {
         let (stream, _) = listener
             .accept()
@@ -74,19 +109,25 @@ pub async fn run_http_proxy_on_listener(
 
 async fn handle_request(
     req: Request<Incoming>,
-    state: Arc<(Uri, ProxyConfig, mpsc::Sender<InteractionEnvelope>)>,
+    state: Arc<ProxyState>,
 ) -> Result<Response<BoxBody>, Infallible> {
-    let (upstream, cfg, tx) = (&state.0, &state.1, &state.2);
     let (parts, body) = req.into_parts();
     let Ok(collected) = body.collect().await else {
         return Ok(error_response(StatusCode::BAD_REQUEST, "Invalid body"));
     };
     let raw_req = collected.to_bytes();
-    let req_meta = extract_request_meta(&raw_req, &parts.headers, cfg);
-    let target_uri = build_upstream_uri(upstream, &parts.uri);
+    let req_meta = extract_request_meta(&raw_req, &parts.headers, &state.config);
+    let target_uri = build_upstream_uri(&state.upstream, &parts.uri);
 
-    let Ok(up_resp) =
-        forward_to_upstream(upstream, parts.method, target_uri, parts.headers, raw_req).await
+    let Ok(up_resp) = send_upstream_request(
+        &state.client,
+        &state.upstream,
+        parts.method,
+        &target_uri,
+        &parts.headers,
+        raw_req,
+    )
+    .await
     else {
         return Ok(error_response(
             StatusCode::BAD_GATEWAY,
@@ -108,8 +149,13 @@ async fn handle_request(
         .map(str::to_string);
 
     if is_sse {
-        let stream_body =
-            stream_sse_body(up_resp.into_body(), req_meta, sess, cfg.clone(), tx.clone());
+        let stream_body = stream_sse_body(
+            up_resp.into_body(),
+            req_meta,
+            sess,
+            state.config.clone(),
+            state.tx.clone(),
+        );
         let mut resp = Response::new(stream_body);
         *resp.status_mut() = status;
         *resp.headers_mut() = resp_headers;
@@ -123,53 +169,13 @@ async fn handle_request(
         ));
     };
     if let (Some(meta), Ok(frame)) = (req_meta, serde_json::from_slice::<Value>(&up_bytes)) {
-        let env = build_http_envelope(&meta, &frame, sess, cfg);
-        let _ = tx.try_send(env);
+        let env = build_http_envelope(&meta, &frame, sess, &state.config);
+        let _ = state.tx.try_send(env);
     }
     let mut resp = Response::new(Full::new(up_bytes).map_err(|never| match never {}).boxed());
     *resp.status_mut() = status;
     *resp.headers_mut() = resp_headers;
     Ok(resp)
-}
-
-async fn forward_to_upstream(
-    upstream: &Uri,
-    method: http::Method,
-    target_uri: String,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response<Incoming>, String> {
-    let authority = upstream
-        .authority()
-        .ok_or_else(|| "Upstream URI missing host".to_string())?;
-    let host_port = if authority.port_u16().is_some() {
-        authority.as_str().to_string()
-    } else {
-        format!("{}:{}", authority.host(), 80)
-    };
-    let stream = TcpStream::connect(&host_port)
-        .await
-        .map_err(|e| e.to_string())?;
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::spawn(async move {
-        let _ = conn.await;
-    });
-
-    let mut builder = Request::builder().method(method).uri(target_uri);
-    for (k, v) in &headers {
-        let name = k.as_str();
-        if !name.eq_ignore_ascii_case("host") && !name.eq_ignore_ascii_case("content-length") {
-            builder = builder.header(k, v);
-        }
-    }
-    builder = builder.header("host", authority.as_str());
-    let out_req = builder.body(Full::new(body)).map_err(|e| e.to_string())?;
-    sender
-        .send_request(out_req)
-        .await
-        .map_err(|e| e.to_string())
 }
 
 fn stream_sse_body(
