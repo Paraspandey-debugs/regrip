@@ -5,10 +5,12 @@ from __future__ import annotations
 import shlex
 import tempfile
 import time
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 
 from regrip.adapters.a2a_driver import A2ADriver
+from regrip.adapters.egress_proxy import EgressMockProxy
 from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_stdio import MCPStdioDriver
@@ -19,8 +21,12 @@ from regrip.adapters.sandbox_runner import (
     resolve_sandbox_mode,
     snapshot_directory,
 )
+from regrip.adapters.side_effect_probes import (
+    make_replay_envelope,
+    payload_digest,
+    run_side_effect_probes,
+)
 from regrip.adapters.sqlite_store import SQLiteStore
-from regrip.core.payload_normalizer import canonical_hash, flatten_json_paths
 from regrip.core.replay_comparator import compare_case_response, summarize_results
 from regrip.core.safety_policy import prepare_replay_arguments, validate_target_allowed
 from regrip.types.baseline import (
@@ -32,24 +38,12 @@ from regrip.types.baseline import (
     SafetyTier,
     ToolDescriptor,
 )
-from regrip.types.config import RegripConfig, ToolPolicyConfig
-from regrip.types.envelope import (
-    ActorInfo,
-    InteractionEnvelope,
-    JsonObject,
-    OperationInfo,
-    ProtocolDriverKind,
-    ProtocolInfo,
-    RequestPayload,
-    ResponsePayload,
-    ResponseStatus,
-    TargetInfo,
-    TelemetryInfo,
-    TransportKind,
-)
+from regrip.types.config import RegripConfig
 
 
-def select_driver(target_uri: str, *, cwd: str | None = None) -> ProtocolDriver:
+def select_driver(
+    target_uri: str, *, cwd: str | None = None, env: dict[str, str] | None = None
+) -> ProtocolDriver:
     """Choose the appropriate ProtocolDriver for the target URI."""
     lowered = target_uri.lower()
     if lowered.startswith(("openapi+http://", "openapi+https://")):
@@ -58,7 +52,7 @@ def select_driver(target_uri: str, *, cwd: str | None = None) -> ProtocolDriver:
         return A2ADriver()
     if lowered.startswith(("http://", "https://")):
         return MCPHttpDriver()
-    return MCPStdioDriver(cwd=cwd)
+    return MCPStdioDriver(cwd=cwd, env=env)
 
 
 def resolve_execution_target(
@@ -82,28 +76,6 @@ def resolve_execution_target(
     return shlex.join(build_ephemeral_container_cmd(runtime, sandbox_image, parts))
 
 
-def _payload_digest(resp: ResponsePayload, noise_masks: set[str]) -> str:
-    payload = (
-        resp.structured_content if resp.structured_content is not None else resp.parsed_text_json
-    )
-    flat = {k: v for k, v in flatten_json_paths(payload).items() if k not in noise_masks}
-    return canonical_hash(flat)
-
-
-def _make_envelope(
-    server_name: str, method: str, tool_name: str, arguments: JsonObject
-) -> InteractionEnvelope:
-    return InteractionEnvelope(
-        protocol=ProtocolInfo(driver=ProtocolDriverKind.MCP, transport=TransportKind.STDIO),
-        actor=ActorInfo(agent_id="regrip-replay"),
-        target=TargetInfo(server_name=server_name),
-        operation=OperationInfo(method=method, tool_name=tool_name),
-        request=RequestPayload(arguments=arguments),
-        response=ResponsePayload(status=ResponseStatus.OK),
-        telemetry=TelemetryInfo(duration_ms=0.0),
-    )
-
-
 class ReplayRunner:
     """Executes policy-gated replay of a BehavioralBaseline against a target server."""
 
@@ -117,45 +89,6 @@ class ReplayRunner:
         self._store = store
         self._driver = driver
 
-    async def _run_side_effect_probes(
-        self,
-        driver: ProtocolDriver,
-        baseline: BehavioralBaseline,
-        case: BaselineCase,
-        target_uri: str,
-        envelope: InteractionEnvelope,
-        candidate_resp: ResponsePayload,
-        policy: ToolPolicyConfig | None,
-        pre_state_digest: str | None,
-        fs_changes: list[str],
-    ) -> str | None:
-        noise = set(baseline.noise_masks)
-        if fs_changes:
-            return (
-                f"Sandbox FS write detected during READ_SAFE tool '{case.tool_name}': "
-                f"{', '.join(fs_changes[:5])}"
-            )
-        if policy and policy.probe_idempotency:
-            probe_resp = await driver.invoke(envelope, target_uri)
-            if _payload_digest(candidate_resp, noise) != _payload_digest(probe_resp, noise):
-                return (
-                    f"Idempotency double-call probe diverged for READ_SAFE tool '{case.tool_name}'"
-                )
-        if policy and policy.state_probe_tool and pre_state_digest is not None:
-            post_env = _make_envelope(
-                baseline.server_name,
-                "tools/call",
-                policy.state_probe_tool,
-                policy.state_probe_args,
-            )
-            post_resp = await driver.invoke(post_env, target_uri)
-            if _payload_digest(post_resp, noise) != pre_state_digest:
-                return (
-                    f"Pre/post state probe '{policy.state_probe_tool}' changed after "
-                    f"'{case.tool_name}'"
-                )
-        return None
-
     async def _run_case(
         self,
         driver: ProtocolDriver,
@@ -165,6 +98,7 @@ class ReplayRunner:
         *,
         allow_mutations: bool,
         sandbox_dir: Path | None,
+        egress_proxy: EgressMockProxy | None,
     ) -> ReplayCaseResult:
         tier, prepared_args = prepare_replay_arguments(
             case.tool_name,
@@ -185,16 +119,20 @@ class ReplayRunner:
         policy = self._config.safety.tool_policies.get(case.tool_name)
         pre_digest: str | None = None
         if policy and policy.state_probe_tool:
-            pre_env = _make_envelope(
+            pre_env = make_replay_envelope(
                 baseline.server_name,
                 "tools/call",
                 policy.state_probe_tool,
                 policy.state_probe_args,
             )
             pre_resp = await driver.invoke(pre_env, target_uri)
-            pre_digest = _payload_digest(pre_resp, set(baseline.noise_masks))
+            pre_digest = payload_digest(pre_resp, set(baseline.noise_masks))
 
-        envelope = _make_envelope(baseline.server_name, case.method, case.tool_name, prepared_args)
+        if egress_proxy is not None:
+            egress_proxy.drain_blocked()
+        envelope = make_replay_envelope(
+            baseline.server_name, case.method, case.tool_name, prepared_args
+        )
         fs_before = snapshot_directory(sandbox_dir) if sandbox_dir else {}
         started = time.monotonic()
         try:
@@ -217,6 +155,11 @@ class ReplayRunner:
             if (sandbox_dir and tier == SafetyTier.READ_SAFE)
             else []
         )
+        blocked_egress = (
+            egress_proxy.drain_blocked()
+            if (egress_proxy is not None and tier == SafetyTier.READ_SAFE)
+            else []
+        )
         result = compare_case_response(
             case,
             candidate_resp,
@@ -225,7 +168,7 @@ class ReplayRunner:
             duration_ms=duration_ms,
         )
         if result.status != ReplayCaseStatus.ERROR:
-            note = await self._run_side_effect_probes(
+            note = await run_side_effect_probes(
                 driver,
                 baseline,
                 case,
@@ -235,6 +178,7 @@ class ReplayRunner:
                 policy,
                 pre_digest,
                 fs_changes,
+                blocked_egress,
             )
             if note is not None:
                 return result.model_copy(
@@ -251,6 +195,7 @@ class ReplayRunner:
         target_git_sha: str | None = None,
         sandbox: str | None = None,
         sandbox_image: str | None = None,
+        egress_audit: bool | None = None,
     ) -> ReplayRun:
         """Validate safety rules, replay safe cases, compare outputs, and persist run."""
         validate_target_allowed(target_uri, self._config.safety)
@@ -261,11 +206,26 @@ class ReplayRunner:
             runtime,
             sandbox_image or self._config.ci_gate.sandbox_image,
         )
+        use_egress = (
+            self._config.ci_gate.egress_audit if egress_audit is None else egress_audit
+        ) and not effective_target.lower().startswith(
+            ("http://", "https://", "openapi+http", "a2a+http")
+        )
 
         candidate_schemas: dict[str, ToolDescriptor] = {}
-        with tempfile.TemporaryDirectory(prefix="regrip-sandbox-") as tmp_dir:
+        async with AsyncExitStack() as stack:
+            tmp_dir = stack.enter_context(tempfile.TemporaryDirectory(prefix="regrip-sandbox-"))
             sandbox_path = Path(tmp_dir)
-            driver = self._driver or select_driver(effective_target, cwd=tmp_dir)
+            egress_proxy = (
+                await stack.enter_async_context(EgressMockProxy())
+                if (use_egress and self._driver is None)
+                else None
+            )
+            driver = self._driver or select_driver(
+                effective_target,
+                cwd=tmp_dir,
+                env=egress_proxy.env_vars() if egress_proxy else None,
+            )
             if baseline.tool_schemas:
                 manifest = await driver.discover_capabilities(effective_target)
                 candidate_schemas = {t.name: t for t in manifest.tools}
@@ -277,6 +237,7 @@ class ReplayRunner:
                     effective_target,
                     allow_mutations=allow_mutations,
                     sandbox_dir=None if self._driver is not None else sandbox_path,
+                    egress_proxy=egress_proxy,
                 )
                 for case in baseline.cases
             ]

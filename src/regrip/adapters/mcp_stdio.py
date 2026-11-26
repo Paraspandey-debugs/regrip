@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 from typing import Any
 
@@ -64,14 +65,21 @@ class MCPStdioDriver:
 
     driver_name: str = "mcp"
 
-    def __init__(self, timeout_seconds: float = 30.0, cwd: str | None = None) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float = 30.0,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self._timeout = timeout_seconds
         self._cwd = cwd
+        self._env = env
 
     async def _start_and_init(
         self, target_uri: str
     ) -> tuple[asyncio.subprocess.Process, dict[str, Any]]:
         cmd = _parse_stdio_command(target_uri)
+        child_env = {**os.environ, **self._env} if self._env else None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -79,6 +87,7 @@ class MCPStdioDriver:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._cwd,
+                env=child_env,
             )
         except OSError as exc:
             raise ProtocolError(

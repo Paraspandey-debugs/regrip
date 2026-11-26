@@ -111,6 +111,7 @@ class CIGateConfig(BaseModel):
 
     sandbox: Literal["auto", "docker", "subprocess"] = "auto"
     sandbox_image: str | None = None
+    egress_audit: bool = True
     fail_on_severities: list[str] = Field(default_factory=lambda: ["FAIL"])
     warn_on_severities: list[str] = Field(default_factory=lambda: ["WARN"])
     require_min_replay_coverage: float = Field(default=0.80, ge=0.0, le=1.0)
