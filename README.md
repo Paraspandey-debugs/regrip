@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/regrip-02-horizontal-lockup-transparent.png" alt="Regrip" height="60" />
+  <img width="952.8" height="312" alt="regrip-02-horizontal-lockup" src="https://github.com/user-attachments/assets/522e175d-5f62-477d-b5ab-f06a6fe1167e" />
   <br/><br/>
 
   <strong>Catch breaking MCP tool changes before they break your agents.</strong>
