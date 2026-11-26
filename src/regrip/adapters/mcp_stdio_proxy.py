@@ -91,7 +91,7 @@ class MCPStdioProxy:
                 try:
                     proc.stdin.write(line)  # type: ignore[union-attr]
                     await proc.stdin.drain()  # type: ignore[union-attr]
-                except (BrokenPipeError, ConnectionResetError):
+                except BrokenPipeError, ConnectionResetError:
                     break
             if proc.stdin and not proc.stdin.is_closing():
                 proc.stdin.close()

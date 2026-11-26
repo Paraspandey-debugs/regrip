@@ -31,7 +31,7 @@ def _values_compatible(
             denom = max(abs(float(baseline_val)), 1e-9)
             return abs(float(candidate_val) - float(baseline_val)) / denom <= tolerance
         return False
-    return baseline_val == candidate_val
+    return bool(baseline_val == candidate_val)
 
 
 def _compare_payloads(

@@ -43,7 +43,7 @@ def _try_parse_json_dict(raw: bytes) -> dict[str, Any] | None:
         return None
     try:
         parsed: Any = json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
 

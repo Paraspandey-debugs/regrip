@@ -8,6 +8,7 @@ from compression import zstd
 from pathlib import Path
 from uuid import UUID
 
+from regrip.adapters.sqlite_schema import SCHEMA_SQL, sqlite_path_from_dsn
 from regrip.core.payload_normalizer import canonical_hash
 from regrip.core.redactor import redact_envelope
 from regrip.types.baseline import BehavioralBaseline, ReplayRun
@@ -16,72 +17,19 @@ from regrip.types.envelope import InteractionEnvelope
 from regrip.types.errors import BaselineError, StorageError
 from regrip.types.impact import ConsumerContract
 
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS interactions (
-    interaction_id TEXT PRIMARY KEY,
-    timestamp_utc TEXT NOT NULL,
-    server_name TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    session_id TEXT,
-    tool_name TEXT NOT NULL,
-    method TEXT NOT NULL,
-    status TEXT NOT NULL,
-    is_error INTEGER NOT NULL,
-    duration_ms REAL NOT NULL,
-    blob_ref TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_interactions_server_tool
-    ON interactions (server_name, tool_name);
-
-CREATE TABLE IF NOT EXISTS baselines (
-    baseline_id TEXT PRIMARY KEY,
-    server_name TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    git_sha TEXT,
-    content_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    UNIQUE(server_name, tag)
-);
-
-CREATE TABLE IF NOT EXISTS replay_runs (
-    run_id TEXT PRIMARY KEY,
-    baseline_id TEXT NOT NULL,
-    baseline_tag TEXT NOT NULL,
-    target_uri TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    completed_at TEXT,
-    payload_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS consumer_contracts (
-    agent_id TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    PRIMARY KEY (agent_id, tool_name)
-);
-"""
-
-
-def _sqlite_path_from_dsn(dsn: str) -> Path:
-    prefix = "sqlite:///"
-    if dsn.startswith(prefix):
-        return Path(dsn[len(prefix) :])
-    return Path(dsn)
-
 
 class SQLiteStore:
     """Local-first interaction, baseline, and replay store using SQLite WAL + zstd blobs."""
 
     def __init__(self, storage: StorageConfig, capture: CaptureConfig | None = None) -> None:
-        self._db_path = _sqlite_path_from_dsn(storage.dsn)
+        self._db_path = sqlite_path_from_dsn(storage.dsn)
         self._blob_dir = Path(storage.blob_dir)
         self._capture = capture or CaptureConfig()
         try:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             self._blob_dir.mkdir(parents=True, exist_ok=True)
             with self._connect() as conn:
-                conn.executescript(_SCHEMA_SQL)
+                conn.executescript(SCHEMA_SQL)
         except OSError as exc:
             raise StorageError(f"Failed to initialize SQLite store: {exc}") from exc
 
@@ -137,6 +85,44 @@ class SQLiteStore:
             raise StorageError(f"Failed to persist interaction: {exc}") from exc
         return redacted
 
+    def sync_unindexed_blobs(self) -> int:
+        """Index any external .jsonl.zst blobs (e.g. written by regrip-proxy) into SQLite."""
+        if not self._blob_dir.exists():
+            return 0
+        try:
+            with self._connect() as conn:
+                known = {row[0] for row in conn.execute("SELECT blob_ref FROM interactions")}
+                added = 0
+                for blob_path in sorted(self._blob_dir.glob("*.jsonl.zst")):
+                    if blob_path.name in known:
+                        continue
+                    env = self._read_blob(blob_path.name)
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO interactions (
+                            interaction_id, timestamp_utc, server_name, agent_id, session_id,
+                            tool_name, method, status, is_error, duration_ms, blob_ref
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(env.interaction_id),
+                            env.timestamp_utc.isoformat(),
+                            env.target.server_name,
+                            env.actor.agent_id,
+                            env.actor.session_id,
+                            env.operation.tool_name,
+                            env.operation.method,
+                            env.response.status.value,
+                            1 if env.response.is_error else 0,
+                            env.telemetry.duration_ms,
+                            blob_path.name,
+                        ),
+                    )
+                    added += 1
+            return added
+        except (sqlite3.Error, ValueError) as exc:
+            raise StorageError(f"Failed to sync unindexed blobs: {exc}") from exc
+
     def list_interactions(
         self,
         *,
@@ -145,6 +131,7 @@ class SQLiteStore:
         limit: int = 500,
     ) -> list[InteractionEnvelope]:
         """Load persisted InteractionEnvelopes matching optional server/tool filters."""
+        self.sync_unindexed_blobs()
         clauses: list[str] = []
         params: list[str | int] = []
         if server_name:

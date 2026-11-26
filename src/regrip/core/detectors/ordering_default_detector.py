@@ -92,8 +92,8 @@ def detect_ordering_and_default_changes(
                     category=FindingCategory.ORDERING,
                     severity=severity,
                     json_path=path,
-                    baseline_excerpt=keys_a[:3],
-                    candidate_excerpt=keys_b[:3],
+                    baseline_excerpt=list(keys_a[:3]),
+                    candidate_excerpt=list(keys_b[:3]),
                     deterministic_reason=(
                         f"Array order shifted at '{path}' (Kendall tau={tau:.2f}, "
                         f"top_{top_k_critical}_changed={top_k_changed})"

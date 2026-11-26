@@ -200,7 +200,9 @@ class MCPSessionTracker:
             return None
 
         if pending.method == "tasks/get":
-            status = str(result.get("status", "")).lower() if isinstance(result, dict) else ""
+            if not isinstance(result, dict):
+                return None
+            status = str(result.get("status", "")).lower()
             if status in {"failed", "cancelled"}:
                 self._pending_tasks.pop(pending.task_id or "", None)
                 err_msg = str(result.get("statusMessage") or f"MCP async task {status}")

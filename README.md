@@ -7,7 +7,7 @@
 
 [![CI](https://github.com/Paraspandey-debugs/regrip/actions/workflows/ci.yml/badge.svg)](https://github.com/Paraspandey-debugs/regrip/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](pyproject.toml)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](pyproject.toml)
 [![Rust](https://img.shields.io/badge/rust-regrip--proxy-orange.svg)](crates/regrip-proxy/Cargo.toml)
 
 Behavioral regression testing and consumer-compatibility platform for Model Context Protocol (MCP) servers and AI agent tool integrations.

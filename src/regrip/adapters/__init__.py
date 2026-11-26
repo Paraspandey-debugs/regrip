@@ -10,6 +10,11 @@ from regrip.adapters.mcp_http_proxy import create_http_proxy_app, serve_http_pro
 from regrip.adapters.mcp_stdio import MCPStdioDriver
 from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
 from regrip.adapters.protocol_driver import ProtocolDriver
+from regrip.adapters.proxy_binary import (
+    build_rust_proxy_cmd,
+    find_rust_proxy_binary,
+    run_rust_proxy,
+)
 from regrip.adapters.replay_runner import ReplayRunner, select_driver
 from regrip.adapters.sandbox_runner import (
     build_ephemeral_container_cmd,
@@ -30,12 +35,15 @@ __all__ = [
     "ReplayRunner",
     "SQLiteStore",
     "build_ephemeral_container_cmd",
+    "build_rust_proxy_cmd",
     "create_http_proxy_app",
     "detect_container_runtime",
     "export_baseline_bundle",
+    "find_rust_proxy_binary",
     "import_baseline_bundle",
     "load_config",
     "resolve_sandbox_mode",
+    "run_rust_proxy",
     "select_driver",
     "serve_http_proxy",
     "write_default_config",

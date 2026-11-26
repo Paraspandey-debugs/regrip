@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "regrip-proxy"
+version = "0.1.0"
+description = "High-speed Rust MCP capture proxy binary wheel for Regrip"
+requires-python = ">=3.12"
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"

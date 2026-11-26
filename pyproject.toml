@@ -7,7 +7,7 @@ name = "regrip"
 version = "0.1.0"
 description = "Behavioral regression testing and consumer-compatibility platform for MCP servers and AI agent tools"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
   "anyio>=4.0",
   "httpx>=0.27",
@@ -16,6 +16,14 @@ dependencies = [
   "starlette>=0.40",
   "typer>=0.12",
   "uvicorn>=0.30",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
 ]
 
 [project.optional-dependencies]
@@ -33,7 +41,7 @@ regrip = "regrip.cli.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-regrip = ["adapters/static/*"]
+regrip = ["adapters/static/*", "bin/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,7 +50,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -52,8 +60,12 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 extra-standard-library = ["compression"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 warn_unused_configs = true
 mypy_path = "src"
 packages = ["regrip"]
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true

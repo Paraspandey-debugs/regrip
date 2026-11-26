@@ -66,8 +66,10 @@ class AdvisoryExplainer:
             choices = data.get("choices", [])
             if choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message", {})
-                if isinstance(msg, dict) and isinstance(msg.get("content"), str):
-                    return msg["content"].strip()
+                if isinstance(msg, dict):
+                    content = msg.get("content")
+                    if isinstance(content, str):
+                        return content.strip()
         except Exception:
             return None
         finally:

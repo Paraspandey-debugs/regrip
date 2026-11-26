@@ -82,7 +82,7 @@ class EgressMockProxy:
                 )
             writer.write(resp)
             await writer.drain()
-        except (TimeoutError, OSError):
+        except TimeoutError, OSError:
             pass
         finally:
             writer.close()

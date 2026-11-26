@@ -12,6 +12,11 @@ import typer
 from regrip.adapters.config_store import load_config, write_default_config
 from regrip.adapters.mcp_http_proxy import serve_http_proxy
 from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
+from regrip.adapters.proxy_binary import (
+    build_rust_proxy_cmd,
+    find_rust_proxy_binary,
+    run_rust_proxy,
+)
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.cli.baseline_cmd import baseline_app
@@ -85,6 +90,9 @@ def record_cmd(
     upstream: Annotated[
         str | None, typer.Option("--upstream", help="Upstream Streamable HTTP MCP URL.")
     ] = None,
+    engine: Annotated[
+        str, typer.Option("--engine", help="Proxy engine: auto, rust, or python.")
+    ] = "auto",
     config_path: Annotated[
         Path | None, typer.Option("--config", help="Path to regrip.yaml.")
     ] = None,
@@ -93,6 +101,37 @@ def record_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
+        is_http = bool(listen and upstream)
+        if not is_http and not stdio and not ctx.args:
+            typer.echo(
+                "Error: Provide `--listen` + `--upstream`, or `--stdio -- <command>`.",
+                err=True,
+            )
+            raise typer.Exit(code=3)
+
+        norm_engine = engine.strip().lower()
+        if norm_engine not in {"auto", "rust", "python"}:
+            typer.echo(f"Error: Unsupported proxy engine '{engine}'.", err=True)
+            raise typer.Exit(code=3)
+
+        rust_bin = None if norm_engine == "python" else find_rust_proxy_binary()
+        if norm_engine == "rust" and rust_bin is None:
+            typer.echo("Error: Rust `regrip-proxy` binary not found.", err=True)
+            raise typer.Exit(code=3)
+        if rust_bin is not None:
+            rust_cmd = build_rust_proxy_cmd(
+                rust_bin,
+                server_name=server,
+                agent_id=agent,
+                session_id=session,
+                blob_dir=cfg.storage.blob_dir,
+                config_path=config_path,
+                listen=listen,
+                upstream=upstream,
+                stdio_command=None if is_http else ctx.args,
+            )
+            raise typer.Exit(code=run_rust_proxy(rust_cmd))
+
         if listen and upstream:
             serve_http_proxy(
                 listen,
@@ -103,12 +142,6 @@ def record_cmd(
                 default_session=session,
             )
             return
-        if not stdio and not ctx.args:
-            typer.echo(
-                "Error: Provide `--listen` + `--upstream`, or `--stdio -- <command>`.",
-                err=True,
-            )
-            raise typer.Exit(code=3)
         proxy = MCPStdioProxy(
             ctx.args,
             store=store,
