@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import httpx
 
 from regrip.adapters.a2a_driver import A2ADriver
+from regrip.adapters.graphql_driver import GraphQLDriver
+from regrip.adapters.grpc_driver import GRPCDriver
 from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.replay_runner import ReplayRunner, select_driver
 from regrip.core.baseline_builder import build_baseline
@@ -148,3 +151,101 @@ async def test_a2a_driver_agent_card_discovery_and_invoke() -> None:
     assert resp.status == ResponseStatus.OK
     assert resp.structured_content == {"summary": "done", "score": 95}
     assert isinstance(select_driver("a2a+https://agent.example"), A2ADriver)
+
+
+async def test_graphql_driver_introspection_and_invocation() -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        if "__schema" in body["query"]:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "__schema": {
+                            "queryType": {
+                                "fields": [
+                                    {
+                                        "name": "order",
+                                        "description": "Fetch order",
+                                        "args": [
+                                            {
+                                                "name": "id",
+                                                "type": {
+                                                    "kind": "NON_NULL",
+                                                    "ofType": {"kind": "SCALAR", "name": "ID"},
+                                                },
+                                            }
+                                        ],
+                                    }
+                                ]
+                            },
+                            "mutationType": None,
+                        }
+                    }
+                },
+            )
+        return httpx.Response(200, json={"data": {"order": {"id": "o1", "total": 250}}})
+
+    driver = GraphQLDriver(transport=httpx.MockTransport(_handler))
+    manifest = await driver.discover_capabilities("graphql+http://api.local/graphql")
+    assert manifest.tools[0].name == "order"
+    assert manifest.tools[0].input_schema["required"] == ["id"]
+
+    env = InteractionEnvelope(
+        protocol=ProtocolInfo(
+            driver=ProtocolDriverKind.GRAPHQL, transport=TransportKind.STREAMABLE_HTTP
+        ),
+        actor=ActorInfo(agent_id="orders-bot"),
+        target=TargetInfo(server_name="gql-api"),
+        operation=OperationInfo(method="query", tool_name="order"),
+        request=RequestPayload(arguments={"id": "o1"}),
+        response=ResponsePayload(status=ResponseStatus.OK),
+        telemetry=TelemetryInfo(duration_ms=1.0),
+    )
+    resp = await driver.invoke(env, "graphql+http://api.local/graphql")
+    assert resp.status == ResponseStatus.OK
+    assert resp.structured_content == {"order": {"id": "o1", "total": 250}}
+    assert isinstance(select_driver("graphql+https://api.example/graphql"), GraphQLDriver)
+
+
+async def test_grpc_driver_connect_http_and_grpcurl_reflection() -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/grpc.reflection.v1.ServerReflection/list":
+            return httpx.Response(200, json={"methods": ["billing.v1.Wallet/GetBalance"]})
+        if request.url.path == "/billing.v1.Wallet/GetBalance":
+            return httpx.Response(200, json={"balance": 9900, "currency": "INR"})
+        return httpx.Response(404, json={"code": "not_found", "message": "missing"})
+
+    driver = GRPCDriver(transport=httpx.MockTransport(_handler))
+    manifest = await driver.discover_capabilities("grpc+http://wallet.local")
+    assert manifest.tools[0].name == "billing.v1.Wallet/GetBalance"
+
+    env = InteractionEnvelope(
+        protocol=ProtocolInfo(
+            driver=ProtocolDriverKind.GRPC, transport=TransportKind.STREAMABLE_HTTP
+        ),
+        actor=ActorInfo(agent_id="billing-bot"),
+        target=TargetInfo(server_name="wallet"),
+        operation=OperationInfo(method="unary", tool_name="billing.v1.Wallet/GetBalance"),
+        request=RequestPayload(arguments={"account_id": "a1"}),
+        response=ResponsePayload(status=ResponseStatus.OK),
+        telemetry=TelemetryInfo(duration_ms=1.0),
+    )
+    resp = await driver.invoke(env, "grpc+http://wallet.local")
+    assert resp.status == ResponseStatus.OK
+    assert resp.structured_content == {"balance": 9900, "currency": "INR"}
+    assert isinstance(select_driver("grpc://wallet.local:50051"), GRPCDriver)
+
+    async def _fake_grpcurl(args: list[str]) -> str:
+        if args[-1] == "list":
+            return "billing.v1.Wallet\n"
+        if args[-2] == "list":
+            return "billing.v1.Wallet/GetBalance\n"
+        return '{"balance": 100}'
+
+    with patch.object(GRPCDriver, "_run_grpcurl", side_effect=_fake_grpcurl):
+        raw_driver = GRPCDriver()
+        m2 = await raw_driver.discover_capabilities("grpc://wallet.local:50051")
+        assert m2.tools[0].name == "billing.v1.Wallet/GetBalance"
+        r2 = await raw_driver.invoke(env, "grpc://wallet.local:50051")
+        assert r2.structured_content == {"balance": 100}

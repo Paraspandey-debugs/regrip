@@ -11,6 +11,6 @@ Regrip enforces a strict separation between pure protocol-agnostic domain logic,
   - `detectors/`: 9-category behavioral diff engine (`schema`, `structural`, `value`, `ordering_default`, `semantic`, `diff_engine`).
   - `consumer_impact.py`: 3-source field lineage and per-agent impact classification.
   - `history_analyzer.py` & `report_exporters.py`: Timeline aggregation and JSON/Markdown/JUnit formatting.
-- `src/regrip/adapters/` — Protocol drivers (`MCPStdioDriver`, `MCPHttpDriver`, `HTTPDriver`, `A2ADriver`), capture proxies (`MCPStdioProxy`, `MCPHttpProxy`), `SQLiteStore` (WAL + `.jsonl.zst`), `RegripRecorder` SDK, `SandboxRunner`, `OTel` span exporter, `AdvisoryExplainer`, and `api_server`.
+- `src/regrip/adapters/` — Protocol drivers (`MCPStdioDriver`, `MCPHttpDriver`, `HTTPDriver`, `A2ADriver`, `GraphQLDriver`, `GRPCDriver`), capture proxies (`MCPStdioProxy`, `MCPHttpProxy`), `SQLiteStore` (WAL + `.jsonl.zst`), `RemoteStore` (PostgreSQL + S3), `RegripRecorder` SDK, `SandboxRunner`, `EgressMockProxy`, `OTel` span exporter, `AdvisoryExplainer`, and `api_server`.
 - `src/regrip/cli/` — Typer CLI argument parsing and formatting only.
-- `crates/regrip-proxy/` — Rust (`tokio`) stdio capture proxy with `zeroize`-backed HMAC/regex pre-persistence redaction and `zstd` blob writing.
+- `crates/regrip-proxy/` — Rust (`tokio`/`hyper`/`hyper-rustls`) stdio and Streamable HTTP/HTTPS capture proxy with `zeroize`-backed HMAC/regex pre-persistence redaction, `regrip.yaml` rule loading, and `zstd` blob writing.

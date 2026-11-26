@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 from regrip.adapters.a2a_driver import A2ADriver
 from regrip.adapters.egress_proxy import EgressMockProxy
+from regrip.adapters.graphql_driver import GraphQLDriver
+from regrip.adapters.grpc_driver import GRPCDriver
 from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_stdio import MCPStdioDriver
@@ -53,6 +55,10 @@ def select_driver(
         return HTTPDriver()
     if lowered.startswith(("a2a+http://", "a2a+https://")):
         return A2ADriver()
+    if lowered.startswith(("graphql+http://", "graphql+https://")):
+        return GraphQLDriver()
+    if lowered.startswith(("grpc+http://", "grpc+https://", "grpc://", "grpcs://")):
+        return GRPCDriver()
     if lowered.startswith(("http://", "https://")):
         return MCPHttpDriver()
     return MCPStdioDriver(cwd=cwd, env=env)

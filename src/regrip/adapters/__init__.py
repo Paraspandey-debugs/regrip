@@ -5,6 +5,8 @@ from regrip.adapters.baseline_bundle import export_baseline_bundle, import_basel
 from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config, write_default_config
 from regrip.adapters.egress_proxy import EgressAttempt, EgressMockProxy
+from regrip.adapters.graphql_driver import GraphQLDriver
+from regrip.adapters.grpc_driver import GRPCDriver
 from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_http_proxy import create_http_proxy_app, serve_http_proxy
@@ -30,6 +32,8 @@ __all__ = [
     "A2ADriver",
     "EgressAttempt",
     "EgressMockProxy",
+    "GRPCDriver",
+    "GraphQLDriver",
     "HTTPDriver",
     "MCPHttpDriver",
     "MCPStdioDriver",
