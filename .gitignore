@@ -1,0 +1,22 @@
+context.md
+commit_context.md
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Rust
+target/
+
+# Local workspace & secrets
+.regrip/
+.env
+.env.*
+!.env.example
