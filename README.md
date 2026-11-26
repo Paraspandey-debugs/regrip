@@ -14,7 +14,7 @@
   [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
   <br/><br/>
-  <img src="assets/regrip-demo.gif" alt="Regrip demo: make demo catching 100x scale shift and removed field in terminal and dashboard" width="840" />
+  <img src="assets/regrip-demo.gif" alt="Regrip running against real @modelcontextprotocol/server-filesystem (2025.3.28 vs 2025.11.25) and live dashboard" width="840" />
 
 </div>
 
