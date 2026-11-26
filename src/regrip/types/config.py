@@ -1,0 +1,102 @@
+"""Configuration schemas for regrip.yaml (SRS Section 4.4)."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+from regrip.types.baseline import SafetyTier
+
+
+class StorageMode(StrEnum):
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
+class RedactionAction(StrEnum):
+    DROP = "drop"
+    MASK = "mask"
+    HMAC_TOKEN = "hmac_token"
+
+
+class StorageConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: StorageMode = StorageMode.LOCAL
+    dsn: str = "sqlite:///.regrip/regrip.db"
+    blob_dir: str = ".regrip/blobs"
+
+
+class RedactionRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    action: RedactionAction = RedactionAction.MASK
+
+
+class RedactionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    hmac_secret_env: str = "REGRIP_HMAC_SECRET"
+    rules: list[RedactionRule] = Field(default_factory=list)
+    builtin_detectors: list[str] = Field(
+        default_factory=lambda: ["jwt", "bearer", "aws_key", "credit_card", "email", "ssn"]
+    )
+
+
+class CaptureConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    redaction: RedactionConfig = Field(default_factory=RedactionConfig)
+    strip_headers: list[str] = Field(
+        default_factory=lambda: ["authorization", "cookie", "set-cookie", "x-api-key"]
+    )
+
+
+class ToolPolicyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tier: SafetyTier = SafetyTier.WRITE_BLOCKED
+    probe_idempotency: bool = False
+    dry_run_arg: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class SafetyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trust_mcp_annotations: Literal[False] = False
+    default_tier: SafetyTier = SafetyTier.WRITE_BLOCKED
+    blocked_target_patterns: list[str] = Field(default_factory=lambda: ["*prod*", "*.live.*"])
+    tool_policies: dict[str, ToolPolicyConfig] = Field(default_factory=dict)
+
+
+class ComparisonConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    numeric_relative_tolerance: float = Field(default=0.05, ge=0.0)
+    detect_unit_scaling: bool = True
+    default_order_sensitive: bool = False
+
+
+class CIGateConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sandbox: Literal["auto", "docker", "subprocess"] = "auto"
+    require_min_replay_coverage: float = Field(default=0.80, ge=0.0, le=1.0)
+
+
+class RegripConfig(BaseModel):
+    """Top-level regrip.yaml configuration model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = "1.0"
+    project: str = "default-project"
+    storage: StorageConfig = Field(default_factory=StorageConfig)
+    capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
+    comparison: ComparisonConfig = Field(default_factory=ComparisonConfig)
+    ci_gate: CIGateConfig = Field(default_factory=CIGateConfig)
