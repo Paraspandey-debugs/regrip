@@ -1,7 +1,9 @@
 """External adapters for config, storage, protocol drivers, and replay."""
 
+from regrip.adapters.a2a_driver import A2ADriver
 from regrip.adapters.baseline_bundle import export_baseline_bundle, import_baseline_bundle
 from regrip.adapters.config_store import load_config, write_default_config
+from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_http_proxy import create_http_proxy_app, serve_http_proxy
 from regrip.adapters.mcp_stdio import MCPStdioDriver
@@ -16,6 +18,8 @@ from regrip.adapters.sandbox_runner import (
 from regrip.adapters.sqlite_store import SQLiteStore
 
 __all__ = [
+    "A2ADriver",
+    "HTTPDriver",
     "MCPHttpDriver",
     "MCPStdioDriver",
     "MCPStdioProxy",

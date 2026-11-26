@@ -8,6 +8,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from regrip.adapters.a2a_driver import A2ADriver
+from regrip.adapters.http_driver import HTTPDriver
 from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_stdio import MCPStdioDriver
 from regrip.adapters.protocol_driver import ProtocolDriver
@@ -49,7 +51,12 @@ from regrip.types.envelope import (
 
 def select_driver(target_uri: str, *, cwd: str | None = None) -> ProtocolDriver:
     """Choose the appropriate ProtocolDriver for the target URI."""
-    if target_uri.lower().startswith(("http://", "https://")):
+    lowered = target_uri.lower()
+    if lowered.startswith(("openapi+http://", "openapi+https://")):
+        return HTTPDriver()
+    if lowered.startswith(("a2a+http://", "a2a+https://")):
+        return A2ADriver()
+    if lowered.startswith(("http://", "https://")):
         return MCPHttpDriver()
     return MCPStdioDriver(cwd=cwd)
 
