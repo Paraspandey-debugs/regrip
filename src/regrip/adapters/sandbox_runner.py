@@ -4,16 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import subprocess
 from pathlib import Path
 
 from regrip.types.errors import SafetyViolationError
 
 
 def detect_container_runtime() -> str | None:
-    """Return available container runtime ('docker' or 'podman') or None."""
+    """Return available, responsive container runtime ('docker' or 'podman') or None."""
     for candidate in ("docker", "podman"):
-        if shutil.which(candidate):
-            return candidate
+        if not shutil.which(candidate):
+            continue
+        try:
+            res = subprocess.run(
+                [candidate, "info"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=3,
+                check=False,
+            )
+            if res.returncode == 0:
+                return candidate
+        except OSError, subprocess.SubprocessError:
+            continue
     return None
 
 

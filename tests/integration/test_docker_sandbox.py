@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -61,23 +62,35 @@ for line in sys.stdin:
 """
 
 
-def _find_live_runtime_and_image() -> tuple[str, str] | None:
+def _find_live_runtime_and_image() -> tuple[str, str, str] | None:
     runtime = detect_container_runtime()
     if runtime is None:
         return None
-    info = subprocess.run([runtime, "info"], capture_output=True, text=True, timeout=5)
-    if info.returncode != 0:
-        return None
     preferred = os.environ.get("REGRIP_SANDBOX_IMAGE")
     candidates = (
-        [preferred] if preferred else ["python:3.12-slim", "python:3.12-alpine", "python:alpine"]
+        [preferred]
+        if preferred
+        else [
+            "python:3.12-slim",
+            "python:3.12-alpine",
+            "python:alpine",
+            "localhost/notebook-builder:fedora",
+        ]
     )
     for img in candidates:
         if not img:
             continue
         inspect = subprocess.run([runtime, "image", "inspect", img], capture_output=True, timeout=5)
-        if inspect.returncode == 0:
-            return runtime, img
+        if inspect.returncode != 0:
+            continue
+        for py_bin in ("python3", "python"):
+            probe = subprocess.run(
+                [runtime, "run", "--rm", "--network=none", img, py_bin, "--version"],
+                capture_output=True,
+                timeout=10,
+            )
+            if probe.returncode == 0:
+                return runtime, img, py_bin
     return None
 
 
@@ -137,7 +150,7 @@ async def test_live_container_runtime_sandbox_if_available() -> None:
     found = _find_live_runtime_and_image()
     if found is None:
         pytest.skip("No live Docker/Podman daemon and cached python image available")
-    runtime, image = found
+    runtime, image, py_bin = found
     assert shutil.which(runtime) is not None
 
     env = InteractionEnvelope(
@@ -153,7 +166,7 @@ async def test_live_container_runtime_sandbox_if_available() -> None:
     cfg = RegripConfig(
         safety=SafetyConfig(tool_policies={"ping": ToolPolicyConfig(tier=SafetyTier.READ_SAFE)})
     )
-    inline_cmd = f"python -c {_CONTAINER_ECHO_MCP!r}"
+    inline_cmd = f"{py_bin} -c {shlex.quote(_CONTAINER_ECHO_MCP)}"
     run = await ReplayRunner(cfg).run(
         baseline,
         inline_cmd,
