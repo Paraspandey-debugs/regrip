@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "regrip"
 version = "0.1.0"
-description = "Behavioral regression testing and consumer-compatibility platform for MCP servers and AI agent tools"
+description = "Catch breaking MCP tool changes before they break your agents. Records real calls, replays new server versions, and tells you which agent breaks."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

@@ -4,7 +4,7 @@
 
   <strong>Catch breaking MCP tool changes before they break your agents.</strong>
   <br/>
-  Behavioral regression testing &amp; consumer-compatibility CI for MCP servers and AI agent tool integrations.
+  It records real calls, replays your new server version, and tells you which agent breaks.
   <br/><br/>
 
   [![CI](https://github.com/Paraspandey-debugs/regrip/actions/workflows/ci.yml/badge.svg)](https://github.com/Paraspandey-debugs/regrip/actions/workflows/ci.yml)
@@ -12,6 +12,9 @@
   [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](pyproject.toml)
   [![Rust](https://img.shields.io/badge/rust-regrip--proxy-orange.svg)](crates/regrip-proxy/Cargo.toml)
   [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+
+  <br/><br/>
+  <img src="assets/regrip-demo.gif" alt="Regrip demo: make demo catching 100x scale shift and removed field in terminal and dashboard" width="840" />
 
 </div>
 
@@ -44,6 +47,31 @@ Both agents (`support-agent`, `pricing-bot`) are flagged **CONFIRMED_REGRESSION*
 ![Regrip CI gate terminal output](assets/demo-ci-output.svg)
 
 </details>
+
+---
+
+## Real-world example: `@modelcontextprotocol/server-filesystem`
+
+Running Regrip against two published versions of the official `@modelcontextprotocol/server-filesystem` package (`2025.3.28` → `2025.11.25`):
+
+```bash
+bash examples/real_world_filesystem.sh
+```
+
+```markdown
+## Regrip Compatibility Report — 15 Fail, 0 Warn
+Target: npx --offline @modelcontextprotocol/server-filesystem@2025.11.25
+vs Baseline: fs-mcp (2025.3.28) · Safe Replay: 2/2 cases executed
+
+| Tool | Status | Category | Consumer Impact | Summary |
+| :--- | :--- | :--- | :--- | :--- |
+| `read_file` | FAIL | Output + Schema | `coding-assistant`: **UNAFFECTED** | Input parameter `path` became required; `$.hello` missing |
+| `list_directory` | FAIL | Schema | `coding-assistant`: **UNAFFECTED** | Input parameter `path` became required |
+| `edit_file` | FAIL | Schema | No registered consumers | Input parameters `edits`, `path` became required |
+| `move_file` | FAIL | Schema | No registered consumers | Input parameters `destination`, `source` became required |
+```
+
+Regrip catches the exact schema tightening and output envelope shift between `2025.3.28` and `2025.11.25`, while confirming `coding-assistant` is `UNAFFECTED` because its recorded calls already supply `path` and read `$.content[0].text`.
 
 ---
 
