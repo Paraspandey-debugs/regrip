@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from urllib.parse import urlparse
@@ -15,20 +14,9 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 
-from regrip.adapters.mcp_jsonrpc import MCP_SPEC_VERSION, parse_jsonrpc_tool_response
+from regrip.adapters.mcp_session_tracker import MCPSessionTracker
 from regrip.adapters.sqlite_store import SQLiteStore
-from regrip.core.trace_context import extract_trace_and_actor
-from regrip.types.envelope import (
-    ActorInfo,
-    InteractionEnvelope,
-    OperationInfo,
-    ProtocolDriverKind,
-    ProtocolInfo,
-    RequestPayload,
-    TargetInfo,
-    TelemetryInfo,
-    TransportKind,
-)
+from regrip.types.envelope import InteractionEnvelope, TransportKind
 
 
 def _extract_sse_json_dicts(chunk: bytes, buffer: str) -> tuple[list[dict[str, Any]], str]:
@@ -60,46 +48,6 @@ def _try_parse_json_dict(raw: bytes) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _build_envelope_from_http(
-    req_frame: dict[str, Any],
-    resp_frame: dict[str, Any],
-    *,
-    server_name: str,
-    agent_id: str,
-    session_id: str | None,
-    traceparent: str | None,
-    tracestate: str | None,
-    duration_ms: float,
-) -> InteractionEnvelope | None:
-    if req_frame.get("method") != "tools/call":
-        return None
-    params = req_frame.get("params")
-    if not isinstance(params, dict):
-        return None
-    tool_name = params.get("name")
-    arguments = params.get("arguments", {})
-    if not isinstance(tool_name, str) or not isinstance(arguments, dict):
-        return None
-
-    return InteractionEnvelope(
-        protocol=ProtocolInfo(
-            driver=ProtocolDriverKind.MCP,
-            spec_version=MCP_SPEC_VERSION,
-            transport=TransportKind.STREAMABLE_HTTP,
-        ),
-        actor=ActorInfo(agent_id=agent_id, session_id=session_id),
-        target=TargetInfo(server_name=server_name),
-        operation=OperationInfo(method="tools/call", tool_name=tool_name),
-        request=RequestPayload(arguments=arguments),
-        response=parse_jsonrpc_tool_response(resp_frame),
-        telemetry=TelemetryInfo(
-            duration_ms=round(duration_ms, 3),
-            traceparent=traceparent,
-            tracestate=tracestate,
-        ),
-    )
-
-
 def _persist_fail_open(
     store: SQLiteStore,
     envelope: InteractionEnvelope | None,
@@ -125,35 +73,20 @@ def _resolve_target_url(request: Request, upstream_url: str) -> str:
 
 async def _forward_sse(
     upstream_resp: httpx.Response,
-    req_frame: dict[str, Any] | None,
+    tracker: MCPSessionTracker,
     *,
     store: SQLiteStore,
-    server_name: str,
-    agent_id: str,
     session_id: str | None,
-    traceparent: str | None,
-    tracestate: str | None,
-    started: float,
     on_error: Callable[[Exception], None] | None,
     close_client: Callable[[], Any],
 ) -> AsyncIterator[bytes]:
     sse_buf = ""
     try:
         async for chunk in upstream_resp.aiter_bytes():
-            if req_frame is not None:
-                frames, sse_buf = _extract_sse_json_dicts(chunk, sse_buf)
-                for frame in frames:
-                    env = _build_envelope_from_http(
-                        req_frame,
-                        frame,
-                        server_name=server_name,
-                        agent_id=agent_id,
-                        session_id=session_id,
-                        traceparent=traceparent,
-                        tracestate=tracestate,
-                        duration_ms=(time.monotonic() - started) * 1000.0,
-                    )
-                    _persist_fail_open(store, env, on_error)
+            frames, sse_buf = _extract_sse_json_dicts(chunk, sse_buf)
+            for frame in frames:
+                env = tracker.observe_server_frame(frame, session_override=session_id)
+                _persist_fail_open(store, env, on_error)
             yield chunk
     finally:
         await upstream_resp.aclose()
@@ -171,25 +104,21 @@ def create_http_proxy_app(
     http_client: httpx.AsyncClient | None = None,
 ) -> Starlette:
     """Create a Starlette ASGI app proxying Streamable HTTP / SSE MCP traffic."""
+    tracker = MCPSessionTracker(
+        server_name=server_name,
+        transport=TransportKind.STREAMABLE_HTTP,
+        default_agent=default_agent,
+        default_session=default_session,
+    )
 
     async def _proxy_request(request: Request) -> Response:
         body = await request.body()
         req_frame = _try_parse_json_dict(body)
-        meta = (
-            req_frame.get("params", {}).get("_meta")
-            if req_frame and isinstance(req_frame.get("params"), dict)
-            else None
-        )
-        agent_id, session_id, traceparent, tracestate = extract_trace_and_actor(
-            meta if isinstance(meta, dict) else None,
-            dict(request.headers),
-            default_agent=default_agent,
-            default_session=default_session,
-        )
+        if req_frame is not None:
+            tracker.observe_request(req_frame, headers=dict(request.headers))
 
         client = http_client or httpx.AsyncClient(timeout=None)
         owns_client = http_client is None
-        started = time.monotonic()
         req_headers = {
             k: v for k, v in request.headers.items() if k.lower() not in {"host", "content-length"}
         }
@@ -205,7 +134,7 @@ def create_http_proxy_app(
             for k, v in upstream_resp.headers.items()
             if k.lower() not in {"content-length", "transfer-encoding", "content-encoding"}
         }
-        resp_session = upstream_resp.headers.get("mcp-session-id") or session_id
+        resp_session = upstream_resp.headers.get("mcp-session-id") or default_session
 
         async def _close_if_owned() -> None:
             if owns_client:
@@ -215,14 +144,9 @@ def create_http_proxy_app(
             return StreamingResponse(
                 _forward_sse(
                     upstream_resp,
-                    req_frame,
+                    tracker,
                     store=store,
-                    server_name=server_name,
-                    agent_id=agent_id,
                     session_id=resp_session,
-                    traceparent=traceparent,
-                    tracestate=tracestate,
-                    started=started,
                     on_error=on_error,
                     close_client=_close_if_owned,
                 ),
@@ -234,17 +158,8 @@ def create_http_proxy_app(
         raw_body = await upstream_resp.aread()
         await upstream_resp.aclose()
         await _close_if_owned()
-        if req_frame is not None and (resp_json := _try_parse_json_dict(raw_body)):
-            env = _build_envelope_from_http(
-                req_frame,
-                resp_json,
-                server_name=server_name,
-                agent_id=agent_id,
-                session_id=resp_session,
-                traceparent=traceparent,
-                tracestate=tracestate,
-                duration_ms=(time.monotonic() - started) * 1000.0,
-            )
+        if resp_json := _try_parse_json_dict(raw_body):
+            env = tracker.observe_server_frame(resp_json, session_override=resp_session)
             _persist_fail_open(store, env, on_error)
         return Response(
             content=raw_body, status_code=upstream_resp.status_code, headers=resp_headers
