@@ -64,8 +64,9 @@ class MCPStdioDriver:
 
     driver_name: str = "mcp"
 
-    def __init__(self, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, timeout_seconds: float = 30.0, cwd: str | None = None) -> None:
         self._timeout = timeout_seconds
+        self._cwd = cwd
 
     async def _start_and_init(
         self, target_uri: str
@@ -77,6 +78,7 @@ class MCPStdioDriver:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=self._cwd,
             )
         except OSError as exc:
             raise ProtocolError(

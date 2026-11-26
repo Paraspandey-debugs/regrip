@@ -8,6 +8,11 @@ from regrip.adapters.mcp_stdio import MCPStdioDriver
 from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
 from regrip.adapters.protocol_driver import ProtocolDriver
 from regrip.adapters.replay_runner import ReplayRunner, select_driver
+from regrip.adapters.sandbox_runner import (
+    build_ephemeral_container_cmd,
+    detect_container_runtime,
+    resolve_sandbox_mode,
+)
 from regrip.adapters.sqlite_store import SQLiteStore
 
 __all__ = [
@@ -17,10 +22,13 @@ __all__ = [
     "ProtocolDriver",
     "ReplayRunner",
     "SQLiteStore",
+    "build_ephemeral_container_cmd",
     "create_http_proxy_app",
+    "detect_container_runtime",
     "export_baseline_bundle",
     "import_baseline_bundle",
     "load_config",
+    "resolve_sandbox_mode",
     "select_driver",
     "serve_http_proxy",
     "write_default_config",

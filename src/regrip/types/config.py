@@ -62,6 +62,8 @@ class ToolPolicyConfig(BaseModel):
     tier: SafetyTier = SafetyTier.WRITE_BLOCKED
     probe_idempotency: bool = False
     dry_run_arg: dict[str, JsonValue] = Field(default_factory=dict)
+    state_probe_tool: str | None = None
+    state_probe_args: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class SafetyConfig(BaseModel):

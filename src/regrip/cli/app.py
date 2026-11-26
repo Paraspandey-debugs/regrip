@@ -130,6 +130,9 @@ def replay_cmd(
     allow_mutations: Annotated[
         bool, typer.Option("--allow-mutations", help="Allow WRITE_BLOCKED tools.")
     ] = False,
+    sandbox: Annotated[
+        str | None, typer.Option("--sandbox", help="Sandbox mode: auto, docker, subprocess.")
+    ] = None,
     config_path: Annotated[
         Path | None, typer.Option("--config", help="Path to regrip.yaml.")
     ] = None,
@@ -140,7 +143,9 @@ def replay_cmd(
         store = SQLiteStore(cfg.storage, cfg.capture)
         loaded_baseline = _load_baseline_arg(baseline, server, store)
         runner = ReplayRunner(cfg, store=store)
-        run = asyncio.run(runner.run(loaded_baseline, target, allow_mutations=allow_mutations))
+        run = asyncio.run(
+            runner.run(loaded_baseline, target, allow_mutations=allow_mutations, sandbox=sandbox)
+        )
         typer.echo(format_replay_report(run))
         if run.summary.failed > 0 or run.summary.errored > 0:
             raise typer.Exit(code=1)

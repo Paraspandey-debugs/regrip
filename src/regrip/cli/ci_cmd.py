@@ -125,6 +125,9 @@ def ci_cmd(
     allow_mutations: Annotated[
         bool, typer.Option("--allow-mutations", help="Allow WRITE_BLOCKED tools.")
     ] = False,
+    sandbox: Annotated[
+        str | None, typer.Option("--sandbox", help="Sandbox mode: auto, docker, subprocess.")
+    ] = None,
     config_path: Annotated[
         Path | None, typer.Option("--config", help="Path to regrip.yaml.")
     ] = None,
@@ -135,7 +138,9 @@ def ci_cmd(
         store = SQLiteStore(cfg.storage, cfg.capture)
         base = _load_baseline_file_or_tag(baseline, server, store)
         runner = ReplayRunner(cfg, store=store)
-        run = asyncio.run(runner.run(base, target, allow_mutations=allow_mutations))
+        run = asyncio.run(
+            runner.run(base, target, allow_mutations=allow_mutations, sandbox=sandbox)
+        )
         diff_report = diff_baseline_against_run(base, run, cfg.comparison)
 
         interactions = store.list_interactions(server_name=base.server_name, limit=5000)
