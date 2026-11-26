@@ -8,6 +8,7 @@ import time
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from regrip.adapters.a2a_driver import A2ADriver
 from regrip.adapters.egress_proxy import EgressMockProxy
@@ -26,7 +27,9 @@ from regrip.adapters.side_effect_probes import (
     payload_digest,
     run_side_effect_probes,
 )
-from regrip.adapters.sqlite_store import SQLiteStore
+
+if TYPE_CHECKING:
+    from regrip.adapters.store_protocol import StoreBackend
 from regrip.core.replay_comparator import compare_case_response, summarize_results
 from regrip.core.safety_policy import prepare_replay_arguments, validate_target_allowed
 from regrip.types.baseline import (
@@ -82,7 +85,7 @@ class ReplayRunner:
     def __init__(
         self,
         config: RegripConfig,
-        store: SQLiteStore | None = None,
+        store: StoreBackend | None = None,
         driver: ProtocolDriver | None = None,
     ) -> None:
         self._config = config

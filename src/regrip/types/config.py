@@ -27,6 +27,10 @@ class StorageConfig(BaseModel):
     mode: StorageMode = StorageMode.LOCAL
     dsn: str = "sqlite:///.regrip/regrip.db"
     blob_dir: str = ".regrip/blobs"
+    s3_bucket: str | None = None
+    s3_prefix: str = "regrip/blobs"
+    api_token_env: str = "REGRIP_API_TOKEN"
+    project_token_envs: dict[str, str] = Field(default_factory=dict)
 
 
 class RedactionRule(BaseModel):

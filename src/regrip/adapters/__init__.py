@@ -16,6 +16,7 @@ from regrip.adapters.proxy_binary import (
     find_rust_proxy_binary,
     run_rust_proxy,
 )
+from regrip.adapters.remote_store import RemoteStore, open_store
 from regrip.adapters.replay_runner import ReplayRunner, select_driver
 from regrip.adapters.sandbox_runner import (
     build_ephemeral_container_cmd,
@@ -23,6 +24,7 @@ from regrip.adapters.sandbox_runner import (
     resolve_sandbox_mode,
 )
 from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.adapters.store_protocol import StoreBackend
 
 __all__ = [
     "A2ADriver",
@@ -33,8 +35,10 @@ __all__ = [
     "MCPStdioDriver",
     "MCPStdioProxy",
     "ProtocolDriver",
+    "RemoteStore",
     "ReplayRunner",
     "SQLiteStore",
+    "StoreBackend",
     "build_ephemeral_container_cmd",
     "build_rust_proxy_cmd",
     "create_http_proxy_app",
@@ -43,6 +47,7 @@ __all__ = [
     "find_rust_proxy_binary",
     "import_baseline_bundle",
     "load_config",
+    "open_store",
     "resolve_baseline",
     "resolve_sandbox_mode",
     "run_rust_proxy",

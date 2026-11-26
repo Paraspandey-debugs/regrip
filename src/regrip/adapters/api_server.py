@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -16,7 +18,7 @@ from starlette.routing import Route
 from regrip import __version__
 from regrip.adapters.dashboard_html import DASHBOARD_HTML
 from regrip.adapters.replay_runner import ReplayRunner
-from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.adapters.store_protocol import StoreBackend
 from regrip.core.baseline_builder import build_baseline
 from regrip.core.consumer_impact import (
     compute_consumer_impact,
@@ -26,7 +28,7 @@ from regrip.core.consumer_impact import (
 from regrip.core.detectors import diff_baseline_against_run
 from regrip.core.history_analyzer import build_tool_history
 from regrip.types.baseline import ReplayRun
-from regrip.types.config import RegripConfig
+from regrip.types.config import RegripConfig, StorageMode
 from regrip.types.envelope import InteractionEnvelope
 from regrip.types.errors import RegripError
 from regrip.types.impact import ConsumerContract, ContractDiscoverySource
@@ -34,14 +36,34 @@ from regrip.types.impact import ConsumerContract, ContractDiscoverySource
 _ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets"
 
 
-def _find_baseline_for_run(store: SQLiteStore, baseline_id: UUID, tag: str) -> Any:
+def _find_baseline_for_run(store: StoreBackend, baseline_id: UUID, tag: str) -> Any:
     for b in store.list_baselines(limit=500):
         if b.baseline_id == baseline_id or b.tag == tag:
             return b
     return None
 
 
-def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
+def _authorize_request(request: Request, config: RegripConfig) -> JSONResponse | None:
+    slug = request.path_params.get("slug")
+    proj_env = config.storage.project_token_envs.get(slug) if slug else None
+    expected = (
+        os.environ.get(proj_env) if proj_env else os.environ.get(config.storage.api_token_env)
+    )
+    auth_required = config.storage.mode == StorageMode.REMOTE or bool(expected)
+    if not auth_required:
+        return None
+    if not expected:
+        return JSONResponse({"error": "Server API token not configured"}, status_code=403)
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return JSONResponse({"error": "Missing Bearer token"}, status_code=401)
+    provided = header[7:].strip()
+    if not hmac.compare_digest(provided, expected):
+        return JSONResponse({"error": "Invalid Bearer token"}, status_code=403)
+    return None
+
+
+def create_api_app(config: RegripConfig, store: StoreBackend) -> Starlette:
     """Create Starlette REST API + Web Dashboard ASGI application."""
 
     async def dashboard(_request: Request) -> HTMLResponse:
@@ -66,6 +88,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         )
 
     async def ingest_interactions(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         body: Any = await request.json()
         raw_list = body.get("envelopes", []) if isinstance(body, dict) else []
         count = 0
@@ -76,6 +100,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         return JSONResponse({"ingested": count}, status_code=202)
 
     async def baselines_endpoint(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         if request.method == "GET":
             items = [b.model_dump(mode="json") for b in store.list_baselines()]
             return JSONResponse(items)
@@ -89,6 +115,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         return JSONResponse(baseline.model_dump(mode="json"), status_code=201)
 
     async def get_baseline(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         tag = request.path_params["tag"]
         server = request.query_params.get("server")
         if server:
@@ -100,6 +128,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         return JSONResponse({"error": "Baseline not found"}, status_code=404)
 
     async def runs_endpoint(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         if request.method == "GET":
             runs = [r.model_dump(mode="json") for r in store.list_replay_runs()]
             return JSONResponse(runs)
@@ -128,6 +158,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         return JSONResponse(run_obj.model_dump(mode="json"), status_code=201)
 
     async def upsert_contract(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         agent_key = request.path_params["agent_key"]
         body: Any = await request.json()
         contract = ConsumerContract(
@@ -141,6 +173,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         return JSONResponse(contract.model_dump(mode="json"))
 
     async def get_run_report(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         run_id = UUID(request.path_params["run_id"])
         try:
             run = store.get_replay_run(run_id)
@@ -169,6 +203,8 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
         )
 
     async def tool_history(request: Request) -> JSONResponse:
+        if auth_err := _authorize_request(request, config):
+            return auth_err
         tool = request.path_params["tool"]
         envs = store.list_interactions(tool_name=tool, limit=5000)
         runs = store.list_replay_runs(limit=500)
@@ -217,7 +253,7 @@ def create_api_app(config: RegripConfig, store: SQLiteStore) -> Starlette:
 
 def serve_api_server(
     config: RegripConfig,
-    store: SQLiteStore,
+    store: StoreBackend,
     *,
     host: str = "127.0.0.1",
     port: int = 8787,

@@ -13,6 +13,7 @@ import typer
 from regrip.adapters.api_server import serve_api_server
 from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config
+from regrip.adapters.remote_store import open_store
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.core.consumer_impact import (
@@ -264,7 +265,7 @@ def serve_cmd(
     """Start local REST API + Web Dashboard (default :8787)."""
     try:
         cfg = load_config(config_path)
-        store = SQLiteStore(cfg.storage, cfg.capture)
+        store = open_store(cfg)
         typer.echo(f"Serving Regrip Dashboard at http://{host}:{port}")
         serve_api_server(cfg, store, host=host, port=port)
     except RegripError as exc:
