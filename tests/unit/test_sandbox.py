@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-from regrip.adapters.replay_runner import ReplayRunner
+from regrip.adapters.replay_runner import ReplayRunner, resolve_execution_target
 from regrip.adapters.sandbox_runner import (
     build_ephemeral_container_cmd,
     resolve_sandbox_mode,
@@ -15,6 +15,7 @@ from regrip.core.baseline_builder import build_baseline
 from regrip.core.detectors import diff_baseline_against_run
 from regrip.types import (
     ActorInfo,
+    CapabilityManifest,
     ComparisonConfig,
     FindingCategory,
     InteractionEnvelope,
@@ -30,6 +31,7 @@ from regrip.types import (
     SafetyViolationError,
     TargetInfo,
     TelemetryInfo,
+    ToolDescriptor,
     ToolPolicyConfig,
     TransportKind,
 )
@@ -100,3 +102,66 @@ async def test_replay_catches_unexpected_fs_write_in_subprocess_sandbox(tmp_path
     report = diff_baseline_against_run(baseline, run, ComparisonConfig())
     assert report.findings[0].category == FindingCategory.SIDE_EFFECT
     assert "leaked_write.txt" in report.findings[0].deterministic_reason
+
+
+def test_resolve_execution_target_wraps_docker_image() -> None:
+    wrapped = resolve_execution_target("python -m srv", "docker", "docker", "mcp-img:v1")
+    assert wrapped.startswith("docker run --rm -i --network=none")
+    assert "mcp-img:v1 python -m srv" in wrapped
+    assert resolve_execution_target("https://stg.local/mcp", "docker", "docker", "mcp-img:v1") == (
+        "https://stg.local/mcp"
+    )
+    assert resolve_execution_target("python -m srv", "subprocess", None, "mcp-img:v1") == (
+        "python -m srv"
+    )
+
+
+async def test_replay_runner_discovers_candidate_schemas_when_baseline_has_schemas() -> None:
+    class _StubDriver:
+        driver_name = "mcp"
+
+        async def discover_capabilities(self, target_uri: str) -> CapabilityManifest:
+            return CapabilityManifest(
+                server_name="s",
+                tools=[
+                    ToolDescriptor(
+                        name="read_items",
+                        input_schema={"properties": {"limit": {"type": "integer"}}},
+                    )
+                ],
+            )
+
+        async def invoke(self, envelope: InteractionEnvelope, target_uri: str) -> ResponsePayload:
+            return ResponsePayload(status=ResponseStatus.OK, structured_content={"ok": True})
+
+    env = InteractionEnvelope(
+        protocol=ProtocolInfo(driver=ProtocolDriverKind.MCP, transport=TransportKind.STDIO),
+        actor=ActorInfo(agent_id="a1"),
+        target=TargetInfo(server_name="s"),
+        operation=OperationInfo(tool_name="read_items"),
+        request=RequestPayload(arguments={}),
+        response=ResponsePayload(status=ResponseStatus.OK, structured_content={"ok": True}),
+        telemetry=TelemetryInfo(duration_ms=1.0),
+    )
+    baseline = build_baseline(
+        [env],
+        server_name="s",
+        tag="v1",
+        tool_schemas={
+            "read_items": ToolDescriptor(
+                name="read_items",
+                input_schema={"properties": {"query": {"type": "string"}}},
+            )
+        },
+    )
+    cfg = RegripConfig(
+        safety=SafetyConfig(
+            tool_policies={"read_items": ToolPolicyConfig(tier=SafetyTier.READ_SAFE)}
+        )
+    )
+    run = await ReplayRunner(cfg, driver=_StubDriver()).run(
+        baseline, "stdio://stub", sandbox="subprocess"
+    )
+    assert "read_items" in run.candidate_tool_schemas
+    report = diff_baseline_against_run(baseline, run, ComparisonConfig())
+    assert any(f.category == FindingCategory.SCHEMA for f in report.findings)

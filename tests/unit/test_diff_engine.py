@@ -191,3 +191,33 @@ def test_semantic_assertions_and_error_regression() -> None:
     cand_err = ResponsePayload(status=ResponseStatus.TOOL_ERROR, is_error=True)
     report_err = diff_baseline_against_run(b, _run_for(b, cand_err), cfg)
     assert report_err.findings[0].category == FindingCategory.ERROR
+
+
+def test_diff_baseline_against_run_detects_schema_regression() -> None:
+    b = _baseline_with_case(
+        "search",
+        {"ok": True},
+        tool_schemas={
+            "search": ToolDescriptor(
+                name="search",
+                input_schema={"properties": {"query": {"type": "string"}}, "required": ["query"]},
+            )
+        },
+    )
+    run = _run_for(b, ResponsePayload(status=ResponseStatus.OK, structured_content={"ok": True}))
+    run = run.model_copy(
+        update={
+            "candidate_tool_schemas": {
+                "search": ToolDescriptor(
+                    name="search",
+                    input_schema={
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
+                )
+            }
+        }
+    )
+    report = diff_baseline_against_run(b, run, ComparisonConfig())
+    assert report.verdict == FindingSeverity.FAIL
+    assert any(f.category == FindingCategory.SCHEMA for f in report.findings)

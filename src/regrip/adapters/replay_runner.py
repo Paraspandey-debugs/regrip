@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import tempfile
 import time
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_stdio import MCPStdioDriver
 from regrip.adapters.protocol_driver import ProtocolDriver
 from regrip.adapters.sandbox_runner import (
+    build_ephemeral_container_cmd,
     diff_directory_snapshots,
     resolve_sandbox_mode,
     snapshot_directory,
@@ -26,6 +28,7 @@ from regrip.types.baseline import (
     ReplayCaseStatus,
     ReplayRun,
     SafetyTier,
+    ToolDescriptor,
 )
 from regrip.types.config import RegripConfig, ToolPolicyConfig
 from regrip.types.envelope import (
@@ -49,6 +52,27 @@ def select_driver(target_uri: str, *, cwd: str | None = None) -> ProtocolDriver:
     if target_uri.lower().startswith(("http://", "https://")):
         return MCPHttpDriver()
     return MCPStdioDriver(cwd=cwd)
+
+
+def resolve_execution_target(
+    target_uri: str,
+    resolved_mode: str,
+    runtime: str | None,
+    sandbox_image: str | None,
+) -> str:
+    """Wrap stdio target commands in an ephemeral container when docker mode + image are set."""
+    if (
+        resolved_mode != "docker"
+        or not runtime
+        or not sandbox_image
+        or target_uri.lower().startswith(("http://", "https://"))
+    ):
+        return target_uri
+    cleaned = target_uri.removeprefix("stdio://").strip()
+    parts = shlex.split(cleaned)
+    if not parts or parts[0] in {"docker", "podman"}:
+        return target_uri
+    return shlex.join(build_ephemeral_container_cmd(runtime, sandbox_image, parts))
 
 
 def _payload_digest(resp: ResponsePayload, noise_masks: set[str]) -> str:
@@ -219,20 +243,31 @@ class ReplayRunner:
         allow_mutations: bool = False,
         target_git_sha: str | None = None,
         sandbox: str | None = None,
+        sandbox_image: str | None = None,
     ) -> ReplayRun:
         """Validate safety rules, replay safe cases, compare outputs, and persist run."""
         validate_target_allowed(target_uri, self._config.safety)
-        resolved_mode, _ = resolve_sandbox_mode(sandbox or self._config.ci_gate.sandbox)
+        resolved_mode, runtime = resolve_sandbox_mode(sandbox or self._config.ci_gate.sandbox)
+        effective_target = resolve_execution_target(
+            target_uri,
+            resolved_mode,
+            runtime,
+            sandbox_image or self._config.ci_gate.sandbox_image,
+        )
 
+        candidate_schemas: dict[str, ToolDescriptor] = {}
         with tempfile.TemporaryDirectory(prefix="regrip-sandbox-") as tmp_dir:
             sandbox_path = Path(tmp_dir)
-            driver = self._driver or select_driver(target_uri, cwd=tmp_dir)
+            driver = self._driver or select_driver(effective_target, cwd=tmp_dir)
+            if baseline.tool_schemas:
+                manifest = await driver.discover_capabilities(effective_target)
+                candidate_schemas = {t.name: t for t in manifest.tools}
             results = [
                 await self._run_case(
                     driver,
                     baseline,
                     case,
-                    target_uri,
+                    effective_target,
                     allow_mutations=allow_mutations,
                     sandbox_dir=None if self._driver is not None else sandbox_path,
                 )
@@ -246,6 +281,7 @@ class ReplayRunner:
             target_git_sha=target_git_sha,
             execution_mode=resolved_mode,
             completed_at=datetime.now(UTC),
+            candidate_tool_schemas=candidate_schemas,
             summary=summarize_results(results),
             results=results,
         )

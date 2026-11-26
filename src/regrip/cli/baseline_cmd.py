@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Annotated
 
@@ -9,10 +10,11 @@ import typer
 
 from regrip.adapters.baseline_bundle import export_baseline_bundle, import_baseline_bundle
 from regrip.adapters.config_store import load_config
+from regrip.adapters.replay_runner import select_driver
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.cli.formatters import format_baseline_summary
 from regrip.core.baseline_builder import build_baseline
-from regrip.types.baseline import BehavioralBaseline
+from regrip.types.baseline import BehavioralBaseline, ToolDescriptor
 from regrip.types.errors import RegripError
 
 baseline_app = typer.Typer(help="Build and inspect behavioral baselines.")
@@ -35,6 +37,10 @@ def build_cmd(
             help="Automatically mask volatile UUIDs and timestamps.",
         ),
     ] = True,
+    target: Annotated[
+        str | None,
+        typer.Option("--target", help="Optional server command/URL to snapshot tool schemas."),
+    ] = None,
     output: Annotated[
         Path | None, typer.Option("--output", help="Optional JSON export path.")
     ] = None,
@@ -47,6 +53,10 @@ def build_cmd(
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
         interactions = store.list_interactions(server_name=server, limit=5000)
+        tool_schemas: dict[str, ToolDescriptor] | None = None
+        if target:
+            manifest = asyncio.run(select_driver(target).discover_capabilities(target))
+            tool_schemas = {t.name: t for t in manifest.tools}
         baseline = build_baseline(
             interactions,
             server_name=server,
@@ -54,6 +64,7 @@ def build_cmd(
             git_sha=git_sha,
             max_cases_per_tool=max_cases,
             auto_noise_calibrate=auto_noise_calibrate,
+            tool_schemas=tool_schemas,
         )
         store.save_baseline(baseline)
         if output is not None:

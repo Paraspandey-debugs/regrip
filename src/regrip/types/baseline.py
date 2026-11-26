@@ -146,5 +146,6 @@ class ReplayRun(BaseModel):
     execution_mode: str = "subprocess"
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    candidate_tool_schemas: dict[str, ToolDescriptor] = Field(default_factory=dict)
     summary: ReplaySummary = Field(default_factory=ReplaySummary)
     results: list[ReplayCaseResult] = Field(default_factory=list)

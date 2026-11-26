@@ -117,6 +117,8 @@ def diff_baseline_against_run(
     noise_masks = set(baseline.noise_masks)
     case_map = {c.case_id: c for c in baseline.cases}
     findings: list[RegressionFinding] = []
+    if baseline.tool_schemas and run.candidate_tool_schemas:
+        findings.extend(detect_schema_changes(baseline.tool_schemas, run.candidate_tool_schemas))
 
     for res in run.results:
         if res.status == ReplayCaseStatus.SKIPPED_UNSAFE:
