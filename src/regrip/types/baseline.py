@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from regrip.types.envelope import JsonObject, ResponseStatus, ToolAnnotations
+from regrip.types.envelope import JsonObject, ResponsePayload, ResponseStatus, ToolAnnotations
 
 
 class SafetyTier(StrEnum):
@@ -115,6 +115,7 @@ class ReplayCaseResult(BaseModel):
     duration_ms: float = Field(ge=0.0, default=0.0)
     baseline_status: ResponseStatus
     candidate_status: ResponseStatus | None = None
+    candidate_response: ResponsePayload | None = None
     diff_paths: list[str] = Field(default_factory=list)
 
 

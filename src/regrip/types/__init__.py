@@ -23,7 +23,14 @@ from regrip.types.config import (
     SafetyConfig,
     StorageConfig,
     StorageMode,
+    ToolComparisonOverride,
     ToolPolicyConfig,
+)
+from regrip.types.diff import (
+    DiffReport,
+    FindingCategory,
+    FindingSeverity,
+    RegressionFinding,
 )
 from regrip.types.envelope import (
     ActorInfo,
@@ -60,8 +67,11 @@ __all__ = [
     "CaptureConfig",
     "ComparisonConfig",
     "ConfigError",
+    "DiffReport",
     "EnvironmentKind",
     "FieldTypeProfile",
+    "FindingCategory",
+    "FindingSeverity",
     "InteractionEnvelope",
     "JsonObject",
     "OperationInfo",
@@ -71,6 +81,7 @@ __all__ = [
     "RedactionAction",
     "RedactionConfig",
     "RedactionRule",
+    "RegressionFinding",
     "RegripConfig",
     "RegripError",
     "ReplayCaseResult",
@@ -89,6 +100,7 @@ __all__ = [
     "TargetInfo",
     "TelemetryInfo",
     "ToolAnnotations",
+    "ToolComparisonOverride",
     "ToolDescriptor",
     "ToolPolicyConfig",
     "TransportKind",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from regrip.types.baseline import BehavioralBaseline, ReplayRun
+from regrip.types.diff import DiffReport
 
 
 def format_baseline_summary(baseline: BehavioralBaseline) -> str:
@@ -34,5 +35,21 @@ def format_replay_report(run: ReplayRun) -> str:
         lines.append(
             f"  [{item.status.value}] {item.tool_name} ({item.duration_ms:.1f}ms): "
             f"{item.reason}{paths}"
+        )
+    return "\n".join(lines)
+
+
+def format_diff_report(report: DiffReport) -> str:
+    """Format a DiffReport into a human-readable summary."""
+    lines = [
+        f"Diff Verdict: {report.verdict.value} "
+        f"(baseline={report.baseline_tag}, target={report.target_label})",
+        f"Counts: FAIL={report.summary_counts.get('FAIL', 0)} "
+        f"WARN={report.summary_counts.get('WARN', 0)}",
+    ]
+    for f in report.findings:
+        lines.append(
+            f"  [{f.severity.value}] {f.tool_name} ({f.category.value}) {f.json_path}: "
+            f"{f.deterministic_reason}"
         )
     return "\n".join(lines)

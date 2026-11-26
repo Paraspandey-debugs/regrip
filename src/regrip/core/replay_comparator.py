@@ -90,6 +90,7 @@ def compare_case_response(
             duration_ms=duration_ms,
             baseline_status=case.expected_status,
             candidate_status=candidate.status,
+            candidate_response=candidate,
             diff_paths=["$.status"],
         )
 
@@ -110,6 +111,7 @@ def compare_case_response(
             duration_ms=duration_ms,
             baseline_status=case.expected_status,
             candidate_status=candidate.status,
+            candidate_response=candidate,
             diff_paths=diff_paths,
         )
 
@@ -122,6 +124,7 @@ def compare_case_response(
         duration_ms=duration_ms,
         baseline_status=case.expected_status,
         candidate_status=candidate.status,
+        candidate_response=candidate,
     )
 
 

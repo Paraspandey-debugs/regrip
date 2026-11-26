@@ -73,12 +73,24 @@ class SafetyConfig(BaseModel):
     tool_policies: dict[str, ToolPolicyConfig] = Field(default_factory=dict)
 
 
+class ToolComparisonOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_sensitive: bool | None = None
+    top_k_critical: int = Field(default=1, ge=1)
+    kendall_tau_min: float = Field(default=0.70, ge=-1.0, le=1.0)
+    numeric_relative_tolerance: float | None = Field(default=None, ge=0.0)
+    assertions: list[str] = Field(default_factory=list)
+
+
 class ComparisonConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     numeric_relative_tolerance: float = Field(default=0.05, ge=0.0)
     detect_unit_scaling: bool = True
     default_order_sensitive: bool = False
+    text_similarity_min: float = Field(default=0.75, ge=0.0, le=1.0)
+    tool_overrides: dict[str, ToolComparisonOverride] = Field(default_factory=dict)
 
 
 class CIGateConfig(BaseModel):

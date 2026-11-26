@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 import typer
 
@@ -14,8 +15,10 @@ from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.cli.baseline_cmd import baseline_app
-from regrip.cli.formatters import format_replay_report
+from regrip.cli.formatters import format_diff_report, format_replay_report
+from regrip.core.detectors import diff_baseline_against_run, diff_baselines
 from regrip.types.baseline import BehavioralBaseline
+from regrip.types.diff import FindingSeverity
 from regrip.types.errors import RegripError
 
 app = typer.Typer(
@@ -138,6 +141,54 @@ def replay_cmd(
         typer.echo(format_replay_report(run))
         if run.summary.failed > 0 or run.summary.errored > 0:
             raise typer.Exit(code=1)
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@app.command("diff")
+def diff_cmd(
+    baseline: Annotated[str, typer.Option("--baseline", help="Base baseline JSON path or tag.")],
+    candidate: Annotated[
+        str | None, typer.Option("--candidate", help="Candidate baseline JSON path or tag.")
+    ] = None,
+    run_id: Annotated[
+        str | None, typer.Option("--run-id", help="ReplayRun UUID to compare against baseline.")
+    ] = None,
+    server: Annotated[
+        str | None, typer.Option("--server", help="Server name for tag lookup.")
+    ] = None,
+    output_format: Annotated[
+        str, typer.Option("--format", help="Output format: text or json.")
+    ] = "text",
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Compare a baseline against a candidate baseline or replay run."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        base = _load_baseline_arg(baseline, server, store)
+        if run_id is not None:
+            run = store.get_replay_run(UUID(run_id))
+            report = diff_baseline_against_run(base, run, cfg.comparison)
+        elif candidate is not None:
+            cand_base = _load_baseline_arg(candidate, server, store)
+            report = diff_baselines(base, cand_base, cfg.comparison)
+        else:
+            typer.echo("Error: Provide either --candidate or --run-id.", err=True)
+            raise typer.Exit(code=3)
+
+        if output_format == "json":
+            typer.echo(report.model_dump_json(indent=2))
+        else:
+            typer.echo(format_diff_report(report))
+
+        if report.verdict == FindingSeverity.FAIL:
+            raise typer.Exit(code=1)
+        if report.verdict == FindingSeverity.WARN:
+            raise typer.Exit(code=2)
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
