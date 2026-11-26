@@ -40,3 +40,7 @@ def test_action_yml_schema_and_sticky_marker_alignment() -> None:
     comment_step = next(s for s in data["runs"]["steps"] if "sticky PR comment" in s["name"])
     assert "<!-- regrip-report -->" in comment_step["with"]["script"]
     assert md.startswith("<!-- regrip-report -->")
+
+    check_step = next(s for s in data["runs"]["steps"] if "Check Run" in s["name"])
+    assert "checks.create" in check_step["with"]["script"]
+    assert "annotations" in check_step["with"]["script"]

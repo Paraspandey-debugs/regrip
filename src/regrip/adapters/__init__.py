@@ -2,6 +2,7 @@
 
 from regrip.adapters.a2a_driver import A2ADriver
 from regrip.adapters.baseline_bundle import export_baseline_bundle, import_baseline_bundle
+from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config, write_default_config
 from regrip.adapters.egress_proxy import EgressAttempt, EgressMockProxy
 from regrip.adapters.http_driver import HTTPDriver
@@ -42,6 +43,7 @@ __all__ = [
     "find_rust_proxy_binary",
     "import_baseline_bundle",
     "load_config",
+    "resolve_baseline",
     "resolve_sandbox_mode",
     "run_rust_proxy",
     "select_driver",

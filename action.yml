@@ -38,7 +38,11 @@ inputs:
   python-version:
     description: "Python version to provision if regrip is not preinstalled"
     required: false
-    default: "3.12"
+    default: "3.14"
+  check-run:
+    description: "Create a GitHub Check Run with per-tool findings annotations"
+    required: false
+    default: "true"
   comment-pr:
     description: "Post or update sticky <!-- regrip-report --> PR comment"
     required: false
@@ -159,6 +163,50 @@ runs:
           } else {
             await github.rest.issues.createComment({ owner, repo, issue_number, body });
           }
+
+    - name: Create GitHub Check Run
+      if: inputs.check-run == 'true'
+      uses: actions/github-script@v7
+      env:
+        REGRIP_REPORT_JSON: ${{ steps.run-ci.outputs.report_json }}
+        REGRIP_REPORT_MD: ${{ steps.run-ci.outputs.report_markdown }}
+        REGRIP_EXIT_CODE: ${{ steps.run-ci.outputs.exit_code }}
+        REGRIP_CONFIG_PATH: ${{ inputs.config }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const jsonPath = process.env.REGRIP_REPORT_JSON;
+          const mdPath = process.env.REGRIP_REPORT_MD;
+          const rc = Number(process.env.REGRIP_EXIT_CODE || '3');
+          const conclusion = rc === 0 ? 'success' : rc === 2 ? 'neutral' : 'failure';
+          const head_sha = context.payload.pull_request?.head?.sha || context.sha;
+          const { owner, repo } = context.repo;
+
+          let annotations = [];
+          let title = `Regrip Compatibility Gate (${conclusion.toUpperCase()})`;
+          if (jsonPath && fs.existsSync(jsonPath)) {
+            const report = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            title = `Regrip Verdict: ${report.verdict}`;
+            annotations = (report.findings || []).slice(0, 50).map((f) => ({
+              path: process.env.REGRIP_CONFIG_PATH || 'regrip.yaml',
+              start_line: 1,
+              end_line: 1,
+              annotation_level: f.severity === 'FAIL' ? 'failure' : f.severity === 'WARN' ? 'warning' : 'notice',
+              title: `${f.tool_name} (${f.category})`,
+              message: `${f.json_path}: ${f.deterministic_reason}`,
+            }));
+          }
+          const summary = mdPath && fs.existsSync(mdPath) ? fs.readFileSync(mdPath, 'utf8') : title;
+          await github.rest.checks.create({
+            owner,
+            repo,
+            name: 'Regrip Behavioral Gate',
+            head_sha,
+            status: 'completed',
+            conclusion,
+            output: { title, summary, annotations },
+          });
 
     - name: Enforce Regrip gate exit code
       shell: bash

@@ -9,6 +9,7 @@ from uuid import UUID
 
 import typer
 
+from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config, write_default_config
 from regrip.adapters.mcp_http_proxy import serve_http_proxy
 from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
@@ -23,7 +24,6 @@ from regrip.cli.baseline_cmd import baseline_app
 from regrip.cli.ci_cmd import ci_cmd, export_cmd, history_cmd, impact_cmd, serve_cmd
 from regrip.cli.formatters import format_diff_report, format_replay_report
 from regrip.core.detectors import diff_baseline_against_run, diff_baselines
-from regrip.types.baseline import BehavioralBaseline
 from regrip.types.diff import FindingSeverity
 from regrip.types.errors import RegripError
 
@@ -38,22 +38,6 @@ app.command("ci")(ci_cmd)
 app.command("export")(export_cmd)
 app.command("history")(history_cmd)
 app.command("serve")(serve_cmd)
-
-
-def _load_baseline_arg(
-    baseline_ref: str,
-    server: str | None,
-    store: SQLiteStore,
-) -> BehavioralBaseline:
-    path = Path(baseline_ref)
-    if path.exists():
-        return BehavioralBaseline.model_validate_json(path.read_text(encoding="utf-8"))
-    if server:
-        return store.get_baseline_by_tag(server, baseline_ref)
-    raise RegripError(
-        "Baseline file not found and --server not provided for tag lookup",
-        context={"baseline": baseline_ref},
-    )
 
 
 @app.command("init")
@@ -177,7 +161,7 @@ def replay_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
-        loaded_baseline = _load_baseline_arg(baseline, server, store)
+        loaded_baseline = resolve_baseline(baseline, server=server, store=store)
         runner = ReplayRunner(cfg, store=store)
         run = asyncio.run(
             runner.run(loaded_baseline, target, allow_mutations=allow_mutations, sandbox=sandbox)
@@ -213,12 +197,12 @@ def diff_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
-        base = _load_baseline_arg(baseline, server, store)
+        base = resolve_baseline(baseline, server=server, store=store)
         if run_id is not None:
             run = store.get_replay_run(UUID(run_id))
             report = diff_baseline_against_run(base, run, cfg.comparison)
         elif candidate is not None:
-            cand_base = _load_baseline_arg(candidate, server, store)
+            cand_base = resolve_baseline(candidate, server=server, store=store)
             report = diff_baselines(base, cand_base, cfg.comparison)
         else:
             typer.echo("Error: Provide either --candidate or --run-id.", err=True)

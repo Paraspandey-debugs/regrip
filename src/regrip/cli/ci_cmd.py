@@ -11,6 +11,7 @@ from uuid import UUID
 import typer
 
 from regrip.adapters.api_server import serve_api_server
+from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
@@ -26,24 +27,9 @@ from regrip.core.report_exporters import (
     render_junit_xml,
     render_markdown_pr_comment,
 )
-from regrip.types.baseline import BehavioralBaseline
 from regrip.types.diff import FindingSeverity
 from regrip.types.errors import RegripError
 from regrip.types.impact import ImpactReport
-
-
-def _load_baseline_file_or_tag(
-    baseline_ref: str, server: str | None, store: SQLiteStore
-) -> BehavioralBaseline:
-    path = Path(baseline_ref)
-    if path.exists():
-        return BehavioralBaseline.model_validate_json(path.read_text(encoding="utf-8"))
-    if server:
-        return store.get_baseline_by_tag(server, baseline_ref)
-    raise RegripError(
-        "Baseline file not found and --server not provided for tag lookup",
-        context={"baseline": baseline_ref},
-    )
 
 
 def _format_impact_text(report: ImpactReport) -> str:
@@ -83,12 +69,12 @@ def impact_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
-        base = _load_baseline_file_or_tag(baseline, server, store)
+        base = resolve_baseline(baseline, server=server, store=store)
         if run_id is not None:
             run = store.get_replay_run(UUID(run_id))
             diff_report = diff_baseline_against_run(base, run, cfg.comparison)
         elif candidate is not None:
-            cand_base = _load_baseline_file_or_tag(candidate, server, store)
+            cand_base = resolve_baseline(candidate, server=server, store=store)
             diff_report = diff_baselines(base, cand_base, cfg.comparison)
         else:
             typer.echo("Error: Provide either --candidate or --run-id.", err=True)
@@ -140,7 +126,7 @@ def ci_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
-        base = _load_baseline_file_or_tag(baseline, server, store)
+        base = resolve_baseline(baseline, server=server, store=store)
         runner = ReplayRunner(cfg, store=store)
         run = asyncio.run(
             runner.run(base, target, allow_mutations=allow_mutations, sandbox=sandbox)
@@ -199,7 +185,7 @@ def export_cmd(
     try:
         cfg = load_config(config_path)
         store = SQLiteStore(cfg.storage, cfg.capture)
-        base = _load_baseline_file_or_tag(baseline, server, store)
+        base = resolve_baseline(baseline, server=server, store=store)
         run = store.get_replay_run(UUID(run_id))
         diff_report = diff_baseline_against_run(base, run, cfg.comparison)
         interactions = store.list_interactions(server_name=base.server_name, limit=5000)
