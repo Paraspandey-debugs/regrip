@@ -13,6 +13,7 @@ from regrip.types.baseline import (
     ToolDescriptor,
 )
 from regrip.types.config import (
+    AdvisoryLLMConfig,
     CaptureConfig,
     CIGateConfig,
     ComparisonConfig,
@@ -69,6 +70,7 @@ from regrip.types.impact import (
 
 __all__ = [
     "ActorInfo",
+    "AdvisoryLLMConfig",
     "AgentImpactEntry",
     "AgentImpactStatus",
     "BaselineCase",

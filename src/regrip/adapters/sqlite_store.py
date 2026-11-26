@@ -231,3 +231,15 @@ class SQLiteStore:
         if row is None:
             raise StorageError("Replay run not found", context={"run_id": str(run_id)})
         return ReplayRun.model_validate(json.loads(row[0]))
+
+    def list_replay_runs(self, *, limit: int = 200) -> list[ReplayRun]:
+        """List persisted ReplayRuns ordered chronologically."""
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT payload_json FROM replay_runs ORDER BY started_at ASC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"Failed to list replay runs: {exc}") from exc
+        return [ReplayRun.model_validate(json.loads(row[0])) for row in rows]

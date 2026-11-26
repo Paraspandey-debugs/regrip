@@ -19,6 +19,7 @@ from regrip.core.consumer_impact import (
     merge_consumer_contracts,
 )
 from regrip.core.detectors import diff_baseline_against_run, diff_baselines
+from regrip.core.history_analyzer import build_tool_history
 from regrip.core.report_exporters import (
     render_json_report,
     render_junit_xml,
@@ -168,6 +169,41 @@ def ci_cmd(
             raise typer.Exit(code=1)
         if diff_report.verdict == FindingSeverity.WARN and strict:
             raise typer.Exit(code=2)
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+def history_cmd(
+    tool: Annotated[str, typer.Option("--tool", help="MCP tool name to inspect.")],
+    server: Annotated[
+        str | None, typer.Option("--server", help="Optional server name filter.")
+    ] = None,
+    output_format: Annotated[str, typer.Option("--format", help="text or json.")] = "text",
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Query historical behavioral shifts, error rates, and consumers per tool (FR-OBS-001)."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        interactions = store.list_interactions(server_name=server, tool_name=tool, limit=5000)
+        runs = store.list_replay_runs(limit=500)
+        report = build_tool_history(tool, interactions, runs)
+        if output_format == "json":
+            typer.echo(report.model_dump_json(indent=2))
+            return
+        typer.echo(
+            f"History for {report.tool_name}: calls={report.total_recorded_calls} "
+            f"error_rate={report.error_rate * 100:.1f}% "
+            f"agents={','.join(report.dependent_agents) or 'none'}"
+        )
+        for ev in report.timeline:
+            typer.echo(
+                f"  - {ev.started_at} baseline={ev.baseline_tag} sha={ev.target_git_sha or '-'} "
+                f"failed={ev.failed_cases}/{ev.total_cases}"
+            )
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc

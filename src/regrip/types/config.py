@@ -85,6 +85,16 @@ class ToolComparisonOverride(BaseModel):
     assertions: list[str] = Field(default_factory=list)
 
 
+class AdvisoryLLMConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    provider: str = "openai"
+    model: str = "gpt-5-mini"
+    base_url: str = "https://api.openai.com/v1"
+    api_key_env: str = "REGRIP_LLM_API_KEY"
+
+
 class ComparisonConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -93,6 +103,7 @@ class ComparisonConfig(BaseModel):
     default_order_sensitive: bool = False
     text_similarity_min: float = Field(default=0.75, ge=0.0, le=1.0)
     tool_overrides: dict[str, ToolComparisonOverride] = Field(default_factory=dict)
+    advisory_llm: AdvisoryLLMConfig = Field(default_factory=AdvisoryLLMConfig)
 
 
 class CIGateConfig(BaseModel):
