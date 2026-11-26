@@ -121,6 +121,17 @@ def diff_baseline_against_run(
     for res in run.results:
         if res.status == ReplayCaseStatus.SKIPPED_UNSAFE:
             continue
+        if res.side_effect_note:
+            findings.append(
+                RegressionFinding(
+                    tool_name=res.tool_name,
+                    cluster_key=res.cluster_key,
+                    category=FindingCategory.SIDE_EFFECT,
+                    severity=FindingSeverity.FAIL,
+                    json_path="$",
+                    deterministic_reason=res.side_effect_note,
+                )
+            )
         case = case_map.get(res.case_id)
         if case is None or res.candidate_response is None:
             continue

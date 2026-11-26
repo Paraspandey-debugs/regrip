@@ -9,6 +9,7 @@ from regrip.adapters.mcp_http import MCPHttpDriver
 from regrip.adapters.mcp_stdio import MCPStdioDriver
 from regrip.adapters.protocol_driver import ProtocolDriver
 from regrip.adapters.sqlite_store import SQLiteStore
+from regrip.core.payload_normalizer import canonical_hash, flatten_json_paths
 from regrip.core.replay_comparator import compare_case_response, summarize_results
 from regrip.core.safety_policy import prepare_replay_arguments, validate_target_allowed
 from regrip.types.baseline import (
@@ -104,13 +105,45 @@ class ReplayRunner:
             )
 
         duration_ms = round((time.monotonic() - started) * 1000.0, 3)
-        return compare_case_response(
+        result = compare_case_response(
             case,
             candidate_resp,
             noise_masks=baseline.noise_masks,
             comparison=self._config.comparison,
             duration_ms=duration_ms,
         )
+        policy = self._config.safety.tool_policies.get(case.tool_name)
+        if policy and policy.probe_idempotency and result.status != ReplayCaseStatus.ERROR:
+            probe_resp = await driver.invoke(envelope, target_uri)
+            if self._idempotency_diverged(candidate_resp, probe_resp, set(baseline.noise_masks)):
+                return result.model_copy(
+                    update={
+                        "status": ReplayCaseStatus.FAIL,
+                        "side_effect_note": (
+                            f"Idempotency double-call probe diverged for READ_SAFE tool "
+                            f"'{case.tool_name}'"
+                        ),
+                    }
+                )
+        return result
+
+    @staticmethod
+    def _idempotency_diverged(
+        first: ResponsePayload, second: ResponsePayload, noise_masks: set[str]
+    ) -> bool:
+        p1 = (
+            first.structured_content
+            if first.structured_content is not None
+            else first.parsed_text_json
+        )
+        p2 = (
+            second.structured_content
+            if second.structured_content is not None
+            else second.parsed_text_json
+        )
+        flat1 = {k: v for k, v in flatten_json_paths(p1).items() if k not in noise_masks}
+        flat2 = {k: v for k, v in flatten_json_paths(p2).items() if k not in noise_masks}
+        return canonical_hash(flat1) != canonical_hash(flat2)
 
     async def run(
         self,

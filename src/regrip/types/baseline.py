@@ -116,6 +116,7 @@ class ReplayCaseResult(BaseModel):
     baseline_status: ResponseStatus
     candidate_status: ResponseStatus | None = None
     candidate_response: ResponsePayload | None = None
+    side_effect_note: str | None = None
     diff_paths: list[str] = Field(default_factory=list)
 
 

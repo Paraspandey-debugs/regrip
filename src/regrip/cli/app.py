@@ -15,6 +15,7 @@ from regrip.adapters.mcp_stdio_proxy import MCPStdioProxy
 from regrip.adapters.replay_runner import ReplayRunner
 from regrip.adapters.sqlite_store import SQLiteStore
 from regrip.cli.baseline_cmd import baseline_app
+from regrip.cli.ci_cmd import ci_cmd, impact_cmd
 from regrip.cli.formatters import format_diff_report, format_replay_report
 from regrip.core.detectors import diff_baseline_against_run, diff_baselines
 from regrip.types.baseline import BehavioralBaseline
@@ -27,6 +28,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(baseline_app, name="baseline")
+app.command("impact")(impact_cmd)
+app.command("ci")(ci_cmd)
 
 
 def _load_baseline_arg(
