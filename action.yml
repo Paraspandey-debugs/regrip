@@ -1,0 +1,167 @@
+name: "Regrip Behavioral Compatibility Gate"
+description: "Run safe MCP behavioral regression replay, compute consumer impact, and post a sticky PR report."
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  baseline:
+    description: "Path to baseline JSON or baseline tag"
+    required: true
+  target:
+    description: "Candidate MCP stdio command or HTTP URL"
+    required: true
+  server:
+    description: "Optional server name when resolving baseline by tag"
+    required: false
+    default: ""
+  config:
+    description: "Path to regrip.yaml configuration file"
+    required: false
+    default: "regrip.yaml"
+  sandbox:
+    description: "Sandbox mode: auto, docker, or subprocess"
+    required: false
+    default: "auto"
+  strict:
+    description: "Fail CI gate (exit 2) on WARN findings"
+    required: false
+    default: "false"
+  allow-mutations:
+    description: "Allow WRITE_BLOCKED tools during replay"
+    required: false
+    default: "false"
+  out-dir:
+    description: "Directory for generated JSON, Markdown, and JUnit XML reports"
+    required: false
+    default: ".regrip/reports"
+  python-version:
+    description: "Python version to provision if regrip is not preinstalled"
+    required: false
+    default: "3.12"
+  comment-pr:
+    description: "Post or update sticky <!-- regrip-report --> PR comment"
+    required: false
+    default: "true"
+  github-token:
+    description: "GitHub token used to post PR comments"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  verdict:
+    description: "Computed behavioral diff verdict (PASS, WARN, FAIL)"
+    value: ${{ steps.run-ci.outputs.verdict }}
+  report-json:
+    description: "Path to generated regrip-report.json"
+    value: ${{ steps.run-ci.outputs.report_json }}
+  report-markdown:
+    description: "Path to generated regrip-report.md"
+    value: ${{ steps.run-ci.outputs.report_markdown }}
+  exit-code:
+    description: "Deterministic regrip ci exit code (0, 1, 2, or 3)"
+    value: ${{ steps.run-ci.outputs.exit_code }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Regrip
+      shell: bash
+      run: |
+        if ! command -v regrip >/dev/null 2>&1; then
+          python -m pip install --quiet "${{ github.action_path }}"
+        fi
+
+    - name: Run Regrip CI Gate
+      id: run-ci
+      shell: bash
+      env:
+        REGRIP_BASELINE: ${{ inputs.baseline }}
+        REGRIP_TARGET: ${{ inputs.target }}
+        REGRIP_SERVER: ${{ inputs.server }}
+        REGRIP_CONFIG: ${{ inputs.config }}
+        REGRIP_SANDBOX: ${{ inputs.sandbox }}
+        REGRIP_STRICT: ${{ inputs.strict }}
+        REGRIP_ALLOW_MUTATIONS: ${{ inputs.allow-mutations }}
+        REGRIP_OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        args=(
+          ci
+          --baseline "$REGRIP_BASELINE"
+          --target "$REGRIP_TARGET"
+          --sandbox "$REGRIP_SANDBOX"
+          --format "markdown,json,junit"
+          --out-dir "$REGRIP_OUT_DIR"
+        )
+        if [ -n "$REGRIP_SERVER" ]; then
+          args+=(--server "$REGRIP_SERVER")
+        fi
+        if [ -f "$REGRIP_CONFIG" ]; then
+          args+=(--config "$REGRIP_CONFIG")
+        fi
+        if [ "$REGRIP_STRICT" = "true" ]; then
+          args+=(--strict)
+        fi
+        if [ "$REGRIP_ALLOW_MUTATIONS" = "true" ]; then
+          args+=(--allow-mutations)
+        fi
+
+        set +e
+        regrip "${args[@]}"
+        rc=$?
+        set -e
+
+        json_path="$REGRIP_OUT_DIR/regrip-report.json"
+        md_path="$REGRIP_OUT_DIR/regrip-report.md"
+        verdict="ERROR"
+        if [ -f "$json_path" ]; then
+          verdict=$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["verdict"])' "$json_path")
+        fi
+        if [ -f "$md_path" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          cat "$md_path" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        {
+          echo "exit_code=$rc"
+          echo "verdict=$verdict"
+          echo "report_json=$json_path"
+          echo "report_markdown=$md_path"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Post or update sticky PR comment
+      if: inputs.comment-pr == 'true' && github.event.pull_request.number != ''
+      uses: actions/github-script@v7
+      env:
+        REGRIP_REPORT_MD: ${{ steps.run-ci.outputs.report_markdown }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const mdPath = process.env.REGRIP_REPORT_MD;
+          if (!mdPath || !fs.existsSync(mdPath)) return;
+          const body = fs.readFileSync(mdPath, 'utf8');
+          const marker = '<!-- regrip-report -->';
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const comments = await github.paginate(github.rest.issues.listComments, {
+            owner,
+            repo,
+            issue_number,
+            per_page: 100,
+          });
+          const existing = comments.find((c) => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - name: Enforce Regrip gate exit code
+      shell: bash
+      env:
+        REGRIP_EXIT_CODE: ${{ steps.run-ci.outputs.exit_code }}
+      run: exit "${REGRIP_EXIT_CODE:-3}"

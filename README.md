@@ -74,6 +74,20 @@ regrip serve --port 8787
 
 ---
 
+## GitHub Action
+
+Use the repository's composite [action.yml](action.yml) in pull request workflows to run `regrip ci`, publish job summaries, and maintain a sticky `<!-- regrip-report -->` PR comment:
+
+```yaml
+- uses: Paraspandey-debugs/regrip@main
+  with:
+    baseline: .regrip/baselines/v1.json
+    target: "python -m finance_mcp_v2"
+    sandbox: auto
+```
+
+---
+
 ## Python SDK
 
 ```python
