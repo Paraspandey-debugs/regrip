@@ -31,7 +31,10 @@ def _parse_stdio_command(target_uri: str) -> list[str]:
 
 async def _read_json_line(stream: asyncio.StreamReader, timeout: float) -> dict[str, Any]:
     while True:
-        raw = await asyncio.wait_for(stream.readline(), timeout=timeout)
+        try:
+            raw = await asyncio.wait_for(stream.readline(), timeout=timeout)
+        except TimeoutError as exc:
+            raise ProtocolError("Timed out waiting for MCP stdio response") from exc
         if not raw:
             raise ProtocolError("MCP stdio server closed stdout unexpectedly")
         text = raw.decode("utf-8", errors="replace").strip()

@@ -68,6 +68,10 @@ async def test_api_server_ingest_baseline_report_and_dashboard(tmp_path: Path) -
         assert r_dash.status_code == 200
         assert "regrip" in r_dash.text
         assert "behavioral diff" in r_dash.text
+        assert "Agent Dependency Graph" in r_dash.text
+        assert "Tool Behavior Timeline" in r_dash.text
+        assert "Baseline Explorer" in r_dash.text
+        assert "RegripViews" in r_dash.text
 
         r_icon = await client.get("/favicon.ico")
         assert r_icon.status_code == 200

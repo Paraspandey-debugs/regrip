@@ -20,6 +20,28 @@ def _handle(msg: dict[str, object]) -> dict[str, object] | None:
                 "capabilities": {"tools": {}},
             },
         }
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "get_balance",
+                        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}},
+                        "annotations": {"readOnlyHint": True},
+                    },
+                    {
+                        "name": "search_products",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                        },
+                        "annotations": {"readOnlyHint": True},
+                    },
+                ]
+            },
+        }
     if method == "tools/call":
         params = msg.get("params")
         tool_name = params.get("name") if isinstance(params, dict) else None

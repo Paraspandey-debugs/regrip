@@ -55,6 +55,9 @@ regrip ci \
 # 5. Inspect historical drift or launch the local web dashboard
 regrip history --tool get_balance
 regrip serve --port 8787
+
+# Or run the zero-dependency interactive v1 -> v2 demo + dashboard in one command:
+bash examples/run_demo.sh
 ```
 
 ## CLI Commands

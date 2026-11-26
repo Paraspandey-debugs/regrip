@@ -1,10 +1,5 @@
 (() => {
-  const esc = (s) =>
-    String(s ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  const esc = (s) => window.RegripViews.esc(s);
 
   const badgeClass = (status) => {
     if (status === 'FAIL' || status === 'CONFIRMED_REGRESSION') return 'badge-fail';
@@ -32,8 +27,6 @@
     return parts[parts.length - 1] || last;
   };
 
-  const rankStatus = (s) => (s === 'CONFIRMED_REGRESSION' ? 2 : s === 'POTENTIALLY_BROKEN' ? 1 : 0);
-
   let state = { baselines: [], runs: [], activeRunId: null };
 
   const renderBaselines = () => {
@@ -45,8 +38,9 @@
     }
     el.innerHTML = state.baselines
       .map(
-        (b) => `<div class="baseline-row">`
-          + `<span>${esc(b.server_name)}@${esc(b.tag)}</span>`
+        (b, idx) => `<div class="baseline-row">`
+          + `<button type="button" class="baseline-btn" data-baseline-idx="${idx}">`
+          + `${esc(b.server_name)}@${esc(b.tag)}</button>`
           + `<span class="panel-meta">${b.cases.length} cases</span></div>`
       )
       .join('');
@@ -148,12 +142,18 @@
     for (const [tool, items] of byTool.entries()) {
       tbody += `<tr class="tool-group-row"><th colspan="4" scope="colgroup">${esc(tool)}</th></tr>`;
       for (const f of items) {
+        const hasExcerpt = f.baseline_excerpt !== null || f.candidate_excerpt !== null;
+        const excerptHtml = hasExcerpt
+          ? `<details class="excerpt-details"><summary>JSON Excerpt</summary>`
+            + `<pre class="excerpt-pre">- ${esc(JSON.stringify(f.baseline_excerpt))}\n`
+            + `+ ${esc(JSON.stringify(f.candidate_excerpt))}</pre></details>`
+          : '';
         tbody +=
           `<tr class="diff-row">`
           + `<td data-label="Severity">${renderBadge(f.severity, 'Severity')}</td>`
           + `<td data-label="Category"><span class="cat-tag">${esc(f.category)}</span></td>`
           + `<td data-label="Path"><code class="path-chip">${esc(f.json_path)}</code></td>`
-          + `<td data-label="Reason">${formatReason(f.deterministic_reason)}</td>`
+          + `<td data-label="Reason">${formatReason(f.deterministic_reason)}${excerptHtml}</td>`
           + `</tr>`;
       }
     }
@@ -165,43 +165,33 @@
       + `</tr></thead><tbody>${tbody}</tbody></table>`;
   };
 
-  const renderImpact = (impacts) => {
-    const body = document.getElementById('impact-body');
-    const byAgent = new Map();
-    for (const entry of impacts) {
-      if (!byAgent.has(entry.agent_id)) byAgent.set(entry.agent_id, []);
-      byAgent.get(entry.agent_id).push(entry);
-    }
-    document.getElementById('impact-count').textContent = `${byAgent.size} agent(s)`;
-    if (!byAgent.size) {
-      body.innerHTML = '<div class="state-banner">No consumer contracts registered.</div>';
+  const loadToolTimeline = async (toolName) => {
+    const select = document.getElementById('timeline-tool-select');
+    if (!toolName) {
+      window.RegripViews?.renderToolTimeline(null);
       return;
     }
+    if (select && select.value !== toolName) select.value = toolName;
+    const hist = await fetch(`/api/v1/projects/default/tools/${encodeURIComponent(toolName)}/history`).then(
+      (r) => r.json()
+    );
+    window.RegripViews?.renderToolTimeline(hist);
+  };
 
-    let html = '';
-    for (const [agent, tools] of byAgent.entries()) {
-      let worst = 'UNAFFECTED';
-      for (const t of tools) {
-        if (rankStatus(t.impact_status) > rankStatus(worst)) worst = t.impact_status;
-      }
-      const toolRows = tools
-        .map((t) => {
-          const paths = (t.matched_jsonpaths || []).length
-            ? t.matched_jsonpaths.map((p) => `<code class="path-chip">${esc(p)}</code>`).join('')
-            : '<span class="panel-meta">No impacted paths</span>';
-          return `<div class="agent-tool-row">`
-            + `<div class="agent-tool-top"><span class="mono">${esc(t.tool_name)}</span>`
-            + `${renderBadge(t.impact_status, 'Impact')}</div>`
-            + `<div class="agent-paths">${paths}</div></div>`;
-        })
-        .join('');
-      html +=
-        `<article class="agent-card">`
-        + `<div class="agent-head"><span class="agent-name">${esc(agent)}</span>`
-        + `${renderBadge(worst, 'Agent Status')}</div>`
-        + `<div class="agent-tools">${toolRows}</div></article>`;
-    }
-    body.innerHTML = html;
+  const syncTimelineTools = (findings, impacts) => {
+    const select = document.getElementById('timeline-tool-select');
+    if (!select) return;
+    const tools = [
+      ...new Set([
+        ...(findings || []).map((f) => f.tool_name),
+        ...(impacts || []).map((i) => i.tool_name),
+        ...state.baselines.flatMap((b) => (b.cases || []).map((c) => c.tool_name)),
+      ]),
+    ];
+    select.innerHTML = tools.length
+      ? tools.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('')
+      : '<option value="">No tools</option>';
+    loadToolTimeline(tools[0] || '');
   };
 
   const selectRun = async (runId) => {
@@ -209,15 +199,34 @@
     renderRuns();
     const run = state.runs.find((r) => r.run_id === runId);
     const report = await fetch(`/api/v1/projects/default/runs/${runId}/report`).then((r) => r.json());
+    const findings = report.findings || [];
+    const impacts = report.agent_impacts || [];
     renderHero(run, report);
-    renderDiff(report.findings || []);
-    renderImpact(report.agent_impacts || []);
+    renderDiff(findings);
+    window.RegripViews?.renderImpact(impacts, renderBadge);
+    window.RegripViews?.renderDependencyGraph(impacts, findings);
+    await syncTimelineTools(findings, impacts);
   };
 
   document.addEventListener('click', (ev) => {
     const runBtn = ev.target.closest('[data-run-id]');
     if (runBtn) {
       selectRun(runBtn.getAttribute('data-run-id'));
+      return;
+    }
+    const blBtn = ev.target.closest('[data-baseline-idx]');
+    if (blBtn) {
+      const idx = Number(blBtn.getAttribute('data-baseline-idx'));
+      window.RegripViews?.renderBaselineExplorer(state.baselines[idx] || null);
+      return;
+    }
+    if (ev.target.id === 'explorer-close') {
+      window.RegripViews?.renderBaselineExplorer(null);
+      return;
+    }
+    const toolNode = ev.target.closest('[data-timeline-tool]');
+    if (toolNode) {
+      loadToolTimeline(toolNode.getAttribute('data-timeline-tool'));
       return;
     }
     const copyBtn = ev.target.closest('[data-copy]');
@@ -227,6 +236,10 @@
       copyBtn.textContent = 'Copied';
       setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
     }
+  });
+
+  document.getElementById('timeline-tool-select')?.addEventListener('change', (ev) => {
+    loadToolTimeline(ev.target.value);
   });
 
   const init = async () => {
@@ -241,7 +254,9 @@
     } else {
       renderHero(null, null);
       renderDiff([]);
-      renderImpact([]);
+      window.RegripViews?.renderImpact([], renderBadge);
+      window.RegripViews?.renderDependencyGraph([], []);
+      await syncTimelineTools([], []);
     }
   };
 

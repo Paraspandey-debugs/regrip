@@ -47,6 +47,35 @@
       <div id="diff-body"></div>
     </section>
 
+    <div class="obs-grid">
+      <section class="panel" aria-labelledby="graph-heading">
+        <div class="panel-header">
+          <h2 id="graph-heading" class="panel-title">Agent Dependency Graph</h2>
+          <span id="graph-meta" class="panel-meta">0 edges</span>
+        </div>
+        <div id="graph-body" class="graph-wrap"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="timeline-heading">
+        <div class="panel-header">
+          <h2 id="timeline-heading" class="panel-title">Tool Behavior Timeline</h2>
+          <div class="timeline-controls">
+            <select id="timeline-tool-select" class="tool-select" aria-label="Select tool"></select>
+            <span id="timeline-meta" class="panel-meta">0 runs</span>
+          </div>
+        </div>
+        <div id="timeline-body" class="timeline-wrap"></div>
+      </section>
+    </div>
+
+    <section id="baseline-explorer" class="panel is-hidden" aria-labelledby="explorer-title">
+      <div class="panel-header">
+        <h2 id="explorer-title" class="panel-title">Baseline Explorer</h2>
+        <button id="explorer-close" type="button" class="copy-btn">Close</button>
+      </div>
+      <div id="explorer-body" class="explorer-wrap"></div>
+    </section>
+
     <div class="lower-grid">
       <section class="panel" aria-labelledby="impact-heading">
         <div class="panel-header">
@@ -76,6 +105,7 @@
     </div>
   </main>
 
+  <script>/* __REGRIP_VIEWS_JS__ */</script>
   <script>/* __REGRIP_JS__ */</script>
 </body>
 </html>
