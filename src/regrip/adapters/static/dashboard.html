@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>regrip — behavioral diff</title>
+  <link rel="icon" type="image/png" href="/assets/regrip-04-favicon-transparent.png" />
+  <style>/* __REGRIP_CSS__ */</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 28 28" width="28" height="28" fill="none" aria-hidden="true">
+          <path d="M11 4H5V24H11" stroke="currentColor" stroke-width="3.2" stroke-linecap="square" />
+          <path d="M17 4H23V24H17" stroke="currentColor" stroke-width="3.2" stroke-linecap="square" />
+        </svg>
+        <div class="brand-text">
+          <span class="brand-name">regrip</span>
+          <span class="brand-sub">behavioral diff</span>
+        </div>
+      </div>
+      <div class="health-pill" id="health" role="status" aria-live="polite">
+        <span class="health-dot" aria-hidden="true"></span>
+        <span class="health-label">CONNECTING</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="verdict-hero" class="verdict-hero state-empty" aria-live="polite">
+      <div class="verdict-main">
+        <div class="verdict-eyebrow">LATEST RUN VERDICT</div>
+        <div class="verdict-headline-row">
+          <h1 id="verdict-state" class="verdict-state">READY</h1>
+          <p id="verdict-summary" class="verdict-summary">Loading observability store...</p>
+        </div>
+      </div>
+      <div id="verdict-chips" class="stat-chips"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="diff-heading">
+      <div class="panel-header">
+        <h2 id="diff-heading" class="panel-title">Behavioral Diff</h2>
+        <span id="diff-count" class="panel-meta">0 findings</span>
+      </div>
+      <div id="diff-body"></div>
+    </section>
+
+    <div class="lower-grid">
+      <section class="panel" aria-labelledby="impact-heading">
+        <div class="panel-header">
+          <h2 id="impact-heading" class="panel-title">Consumer Impact</h2>
+          <span id="impact-count" class="panel-meta">0 agents</span>
+        </div>
+        <div id="impact-body" class="impact-grid"></div>
+      </section>
+
+      <aside class="sidebar-stack">
+        <section class="panel" aria-labelledby="runs-heading">
+          <div class="panel-header">
+            <h2 id="runs-heading" class="panel-title">Replay Runs</h2>
+            <span id="runs-count" class="panel-meta">0 runs</span>
+          </div>
+          <div id="runs-body" class="run-list"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="baselines-heading">
+          <div class="panel-header">
+            <h2 id="baselines-heading" class="panel-title">Baselines</h2>
+            <span id="baselines-count" class="panel-meta">0 stored</span>
+          </div>
+          <div id="baselines-body" class="baseline-list"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script>/* __REGRIP_JS__ */</script>
+</body>
+</html>

@@ -66,7 +66,8 @@ async def test_api_server_ingest_baseline_report_and_dashboard(tmp_path: Path) -
 
         r_dash = await client.get("/")
         assert r_dash.status_code == 200
-        assert "Regrip Local Observability" in r_dash.text
+        assert "regrip" in r_dash.text
+        assert "behavioral diff" in r_dash.text
 
         r_icon = await client.get("/favicon.ico")
         assert r_icon.status_code == 200
