@@ -48,7 +48,8 @@
 
   const renderRuns = () => {
     const el = document.getElementById('runs-body');
-    document.getElementById('runs-count').textContent = `${state.runs.length} runs`;
+    document.getElementById('runs-count').textContent =
+      `${state.runs.length} ${state.runs.length === 1 ? 'run' : 'runs'}`;
     if (!state.runs.length) {
       el.innerHTML = '<div class="state-banner">No replay runs yet.</div>';
       return;
