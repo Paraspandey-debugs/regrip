@@ -73,7 +73,12 @@ def test_normalize_parses_json_text_content() -> None:
 
 def test_redact_envelope_applies_rules_and_builtin_detectors() -> None:
     env = _make_envelope(
-        arguments={"api_key": "secret-123", "email": "alice@example.com"},
+        arguments={
+            "api_key": "secret-123",
+            "email": "alice@example.com",
+            "anthropic": "sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+            "openai": "sk-proj-abcdefghijklmnopqrstuvwxyz1234",
+        },
         structured={"customer": {"email": "alice@example.com", "ssn": "123-45-6789"}},
     )
     cfg = CaptureConfig(
@@ -90,6 +95,8 @@ def test_redact_envelope_applies_rules_and_builtin_detectors() -> None:
     redacted = redact_envelope(env, cfg)
     assert "api_key" not in redacted.request.arguments
     assert redacted.request.arguments["email"] == "[REDACTED:EMAIL]"
+    assert redacted.request.arguments["anthropic"] == "[REDACTED:ANTHROPIC_KEY]"
+    assert redacted.request.arguments["openai"] == "[REDACTED:OPENAI_KEY]"
     assert isinstance(redacted.response.structured_content, dict)
     customer = redacted.response.structured_content["customer"]
     assert isinstance(customer, dict)

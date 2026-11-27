@@ -50,6 +50,14 @@ static BUILTIN_PATTERNS: LazyLock<Vec<BuiltinPattern>> = LazyLock::new(|| {
             regex: Regex::new(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b").expect("valid aws regex"),
         },
         BuiltinPattern {
+            label: "ANTHROPIC_KEY",
+            regex: Regex::new(r"\bsk-ant-[A-Za-z0-9_-]{12,}\b").expect("valid anthropic key regex"),
+        },
+        BuiltinPattern {
+            label: "OPENAI_KEY",
+            regex: Regex::new(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b").expect("valid openai key regex"),
+        },
+        BuiltinPattern {
             label: "EMAIL",
             regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
                 .expect("valid email regex"),
