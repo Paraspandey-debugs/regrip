@@ -79,7 +79,10 @@ fn redacts_rules_and_builtin_secrets_before_zstd_write() {
     redact_envelope(&mut env, &rules, "test-salt");
     assert!(env.request.arguments.get("api_key").is_none());
     assert_eq!(env.request.arguments["token"], "[REDACTED:BEARER]");
-    assert_eq!(env.request.arguments["anthropic"], "[REDACTED:ANTHROPIC_KEY]");
+    assert_eq!(
+        env.request.arguments["anthropic"],
+        "[REDACTED:ANTHROPIC_KEY]"
+    );
     assert_eq!(env.request.arguments["openai"], "[REDACTED:OPENAI_KEY]");
     let email_tok = env.response.structured_content.as_ref().unwrap()["customer"]["email"]
         .as_str()
