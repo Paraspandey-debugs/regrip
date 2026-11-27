@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-import click
+from pathlib import Path
+from unittest.mock import AsyncMock
 
+import click
+import pytest
+from typer.testing import CliRunner
+
+from regrip.cli.app import app
 from regrip.cli.formatters import format_ci_terminal_report
 from regrip.core.report_exporters import render_markdown_pr_comment
 from regrip.types.baseline import BaselineCase, BehavioralBaseline, ReplayRun, ReplaySummary
+from regrip.types.config import RegripConfig, StorageConfig
 from regrip.types.diff import DiffReport, FindingCategory, FindingSeverity, RegressionFinding
 from regrip.types.impact import AgentImpactEntry, AgentImpactStatus, ImpactReport
 
@@ -84,3 +91,83 @@ def test_render_markdown_pr_comment_sections_and_escaping() -> None:
     assert "<details open>" in md
     assert "### Agent impact" in md
     assert "`support-agent` | `get_balance` | 🔴 CONFIRMED_REGRESSION | `$.balance`" in md
+
+
+def test_format_ci_terminal_report_no_color() -> None:
+    baseline, run, diff, impact = _sample_fixtures()
+
+    rendered = format_ci_terminal_report(
+        baseline,
+        run,
+        diff,
+        impact,
+        report_dir=".regrip/reports",
+        no_color=True,
+    )
+    styled = format_ci_terminal_report(baseline, run, diff, impact, report_dir=".regrip/reports")
+
+    assert "\x1b" not in rendered
+    assert "\x1b[" in styled
+    assert rendered == click.unstyle(styled)
+    assert "FAIL" in rendered
+    assert "get_balance" in rendered
+
+
+@pytest.mark.parametrize(
+    ("no_color_env", "extra_args", "expect_color"),
+    [
+        pytest.param(None, [], True, id="default"),
+        pytest.param(None, ["--no-color"], False, id="flag"),
+        pytest.param("1", [], False, id="environment"),
+        pytest.param("0", [], False, id="nonempty-zero"),
+        pytest.param("", [], True, id="empty-environment"),
+        pytest.param("1", ["--no-color"], False, id="both"),
+        pytest.param("", ["--no-color"], False, id="flag-with-empty-environment"),
+    ],
+)
+def test_ci_terminal_color_controls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_color_env: str | None,
+    extra_args: list[str],
+    expect_color: bool,
+) -> None:
+    baseline, run, diff, _ = _sample_fixtures()
+    config = RegripConfig(
+        storage=StorageConfig(
+            dsn=f"sqlite:///{tmp_path / 'regrip.db'}", blob_dir=str(tmp_path / "blobs")
+        )
+    )
+    config_path = tmp_path / "regrip.yaml"
+    config_path.write_text(config.model_dump_json(), encoding="utf-8")
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(baseline.model_dump_json(), encoding="utf-8")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    if no_color_env is not None:
+        monkeypatch.setenv("NO_COLOR", no_color_env)
+    monkeypatch.setattr("regrip.cli.ci_cmd.ReplayRunner.run", AsyncMock(return_value=run))
+    monkeypatch.setattr("regrip.cli.ci_cmd.diff_baseline_against_run", lambda *_: diff)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "ci",
+            "--config",
+            str(config_path),
+            "--baseline",
+            str(baseline_path),
+            "--target",
+            run.target_uri,
+            "--out-dir",
+            str(tmp_path / "reports"),
+            *extra_args,
+        ],
+        color=True,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert ("\x1b" in result.stdout) is expect_color
+    assert "FAIL" in result.stdout
+    assert "commerce-mcp@v1.0.0" in result.stdout
+    assert "get_balance" in result.stdout
+    assert "Reports written to" in result.stdout

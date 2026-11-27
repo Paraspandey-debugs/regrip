@@ -168,6 +168,29 @@ regrip history --tool get_balance
 regrip serve --port 8787
 ```
 
+### Plain terminal output
+
+Use `--no-color` to disable ANSI colours and styling in the `regrip ci` terminal report:
+
+```bash
+regrip ci --baseline .regrip/baselines/v1.json --target "python -m finance_mcp_v2" --no-color
+```
+
+You can also set `NO_COLOR` to any non-empty value (including `0`). An empty or unset
+`NO_COLOR` preserves the default colour behaviour. For Bash:
+
+```bash
+NO_COLOR=1 regrip ci --baseline .regrip/baselines/v1.json --target "python -m finance_mcp_v2"
+```
+
+For PowerShell, set the variable before running the command and remove it afterwards:
+
+```powershell
+$env:NO_COLOR = "1"
+regrip ci --baseline .regrip/baselines/v1.json --target "python -m finance_mcp_v2"
+Remove-Item Env:NO_COLOR
+```
+
 ### Exit codes
 
 | Code | Meaning |
