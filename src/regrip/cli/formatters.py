@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import click
 import typer
 
 from regrip.types.baseline import BehavioralBaseline, ReplayRun
@@ -73,10 +74,12 @@ def format_ci_terminal_report(
     impact: ImpactReport,
     *,
     report_dir: str | None = None,
+    no_color: bool = False,
 ) -> str:
     """Render a compact, colored CI gate summary for interactive terminals.
 
     Colors are emitted as ANSI codes; `typer.echo` strips them when stdout is not a TTY.
+    Setting `no_color` strips all ANSI styling before the report is returned.
     """
     s = run.summary
     verdict = diff_report.verdict.value
@@ -97,7 +100,12 @@ def format_ci_terminal_report(
     _append_terminal_impacts(out, impact)
     if report_dir:
         out += ["", typer.style(f"  Reports written to {report_dir}", dim=True)]
-    return "\n".join(out) + "\n"
+    result = "\n".join(out) + "\n"
+
+    if no_color:
+        return click.unstyle(result)
+
+    return result
 
 
 def _append_terminal_findings(out: list[str], findings: list[RegressionFinding]) -> None:

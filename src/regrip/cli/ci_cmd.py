@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Annotated
@@ -123,6 +124,7 @@ def ci_cmd(
     config_path: Annotated[
         Path | None, typer.Option("--config", help="Path to regrip.yaml.")
     ] = None,
+    no_color: Annotated[bool, typer.Option("--no-color", help="Disable colored output.")] = False,
 ) -> None:
     """Run full replay + diff + consumer impact + policy gate for CI/CD (FR-CICD-001)."""
     try:
@@ -158,7 +160,14 @@ def ci_cmd(
             )
 
         typer.echo(
-            format_ci_terminal_report(base, run, diff_report, impact, report_dir=str(out_dir))
+            format_ci_terminal_report(
+                base,
+                run,
+                diff_report,
+                impact,
+                report_dir=str(out_dir),
+                no_color=no_color or bool(os.getenv("NO_COLOR")),
+            )
         )
 
         if diff_report.verdict == FindingSeverity.FAIL or run.summary.errored > 0:
