@@ -226,6 +226,23 @@ tracked = recorder.track_consumption(tool="get_user", payload=result.structuredC
 user_id = tracked["id"]  # recorded as a consumed field → drives CONFIRMED_REGRESSION
 ```
 
+For a complete runnable example, see
+[`examples/sdk_consumer_lineage.py`](examples/sdk_consumer_lineage.py). From the repository root:
+
+```bash
+uv run python examples/sdk_consumer_lineage.py
+```
+
+The example records real calls to `examples/mcp_v1.py` using `RegripRecorder`, declares
+balance expectations with `expect_fields`, and reads a product description through
+`track_consumption`. It persists the discovered contracts, builds a baseline, replays
+against `examples/mcp_v2.py`, and runs `regrip impact`. The dynamically accessed
+`$.results[*].description` field is removed in v2, producing `CONFIRMED_REGRESSION`
+for `support-agent -> search_products`; the balance scale change is also confirmed.
+No external server or extra dependencies are needed. Each run saves its configuration,
+database, and baseline in a new `.regrip/sdk-consumer-lineage/run-*` directory and prints
+the command to inspect that replay again.
+
 ---
 
 ## GitHub Action
