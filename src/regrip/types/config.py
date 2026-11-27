@@ -47,7 +47,16 @@ class RedactionConfig(BaseModel):
     hmac_secret_env: str = "REGRIP_HMAC_SECRET"
     rules: list[RedactionRule] = Field(default_factory=list)
     builtin_detectors: list[str] = Field(
-        default_factory=lambda: ["jwt", "bearer", "aws_key", "credit_card", "email", "ssn"]
+        default_factory=lambda: [
+            "jwt",
+            "bearer",
+            "aws_key",
+            "anthropic_key",
+            "openai_key",
+            "credit_card",
+            "email",
+            "ssn",
+        ]
     )
 
 

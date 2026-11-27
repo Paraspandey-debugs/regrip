@@ -48,7 +48,12 @@ fn redacts_rules_and_builtin_secrets_before_zstd_write() {
             tool_name: "get_customer".to_string(),
         },
         request: RequestPayload {
-            arguments: json!({"api_key": "sk-secret", "token": "Bearer supersecrettoken1234"}),
+            arguments: json!({
+                "api_key": "sk-secret",
+                "token": "Bearer supersecrettoken1234",
+                "anthropic": "sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+                "openai": "sk-proj-abcdefghijklmnopqrstuvwxyz1234"
+            }),
             omitted_optional_keys: Vec::new(),
             redacted_paths: Vec::new(),
         },
@@ -74,6 +79,11 @@ fn redacts_rules_and_builtin_secrets_before_zstd_write() {
     redact_envelope(&mut env, &rules, "test-salt");
     assert!(env.request.arguments.get("api_key").is_none());
     assert_eq!(env.request.arguments["token"], "[REDACTED:BEARER]");
+    assert_eq!(
+        env.request.arguments["anthropic"],
+        "[REDACTED:ANTHROPIC_KEY]"
+    );
+    assert_eq!(env.request.arguments["openai"], "[REDACTED:OPENAI_KEY]");
     let email_tok = env.response.structured_content.as_ref().unwrap()["customer"]["email"]
         .as_str()
         .unwrap();
@@ -91,5 +101,7 @@ fn redacts_rules_and_builtin_secrets_before_zstd_write() {
     let decoded = String::from_utf8(raw).unwrap();
     assert!(!decoded.contains("alice@example.com"));
     assert!(!decoded.contains("sk-secret"));
+    assert!(!decoded.contains("sk-ant-api03-abcdefghijklmnopqrstuvwxyz"));
+    assert!(!decoded.contains("sk-proj-abcdefghijklmnopqrstuvwxyz1234"));
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
