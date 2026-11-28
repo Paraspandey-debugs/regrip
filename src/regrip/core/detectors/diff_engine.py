@@ -152,16 +152,65 @@ def diff_baseline_against_run(
     return _finalize_report(baseline.tag, run.target_uri, findings)
 
 
+def _diff_baseline_metadata(
+    baseline: BehavioralBaseline,
+    candidate: BehavioralBaseline,
+) -> list[RegressionFinding]:
+    """Detect added tools and volatile noise-mask differences between two baselines."""
+    findings: list[RegressionFinding] = []
+    for added in sorted(set(candidate.tool_schemas) - set(baseline.tool_schemas)):
+        findings.append(
+            RegressionFinding(
+                tool_name=added,
+                category=FindingCategory.SCHEMA,
+                severity=FindingSeverity.WARN,
+                json_path="$",
+                baseline_excerpt=None,
+                candidate_excerpt=added,
+                deterministic_reason=f"Tool '{added}' added in candidate baseline",
+            )
+        )
+    base_masks = set(baseline.noise_masks)
+    cand_masks = set(candidate.noise_masks)
+    for mask in sorted(cand_masks - base_masks):
+        findings.append(
+            RegressionFinding(
+                tool_name="*",
+                category=FindingCategory.OUTPUT,
+                severity=FindingSeverity.WARN,
+                json_path=mask,
+                baseline_excerpt=None,
+                candidate_excerpt=mask,
+                deterministic_reason=f"Noise mask '{mask}' added in candidate baseline",
+            )
+        )
+    for mask in sorted(base_masks - cand_masks):
+        findings.append(
+            RegressionFinding(
+                tool_name="*",
+                category=FindingCategory.OUTPUT,
+                severity=FindingSeverity.WARN,
+                json_path=mask,
+                baseline_excerpt=mask,
+                candidate_excerpt=None,
+                deterministic_reason=f"Noise mask '{mask}' removed from candidate baseline",
+            )
+        )
+    return findings
+
+
 def diff_baselines(
     baseline: BehavioralBaseline,
     candidate: BehavioralBaseline,
     comparison: ComparisonConfig,
 ) -> DiffReport:
-    """Compare two BehavioralBaselines (schemas + matching cluster cases) deterministically."""
+    """Compare two BehavioralBaselines (schemas, masks, and clusters) deterministically."""
     findings = detect_schema_changes(
         baseline.tool_schemas, candidate.tool_schemas, comparison=comparison
     )
+    findings.extend(_diff_baseline_metadata(baseline, candidate))
     noise_masks = set(baseline.noise_masks) | set(candidate.noise_masks)
+    base_keys = {(c.tool_name, c.cluster_key) for c in baseline.cases}
     cand_by_key = {(c.tool_name, c.cluster_key): c for c in candidate.cases}
 
     for base_case in baseline.cases:
@@ -187,5 +236,17 @@ def diff_baselines(
         )
         findings.extend(
             _diff_case(base_case, cand_resp, noise_masks=noise_masks, comparison=comparison)
+        )
+
+    for tool_name, cluster_key in sorted(set(cand_by_key) - base_keys):
+        findings.append(
+            RegressionFinding(
+                tool_name=tool_name,
+                cluster_key=cluster_key,
+                category=FindingCategory.OUTPUT,
+                severity=FindingSeverity.WARN,
+                json_path="$",
+                deterministic_reason="New baseline cluster added in candidate baseline",
+            )
         )
     return _finalize_report(baseline.tag, candidate.tag, findings)
