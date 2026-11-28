@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from regrip.core.detectors.semantic_detector import text_cosine_similarity
 from regrip.types.baseline import ToolDescriptor
+from regrip.types.config import ComparisonConfig
 from regrip.types.diff import FindingCategory, FindingSeverity, RegressionFinding
+
+_DEPRECATION_RE = re.compile(r"\bdeprecate[ds]?\b", re.IGNORECASE)
 
 
 def _extract_properties(schema: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -116,11 +121,73 @@ def _check_output_schema(
     return findings
 
 
+def _check_description_drift(
+    tool_name: str,
+    base_desc: str | None,
+    cand_desc: str | None,
+    *,
+    policy: str,
+    similarity_min: float,
+) -> list[RegressionFinding]:
+    if policy == "ignore":
+        return []
+    base_norm = " ".join((base_desc or "").split())
+    cand_norm = " ".join((cand_desc or "").split())
+    if base_norm == cand_norm:
+        return []
+
+    severity = FindingSeverity.FAIL if policy == "fail" else FindingSeverity.WARN
+    reason: str | None = None
+    if base_norm and not cand_norm:
+        reason = "Tool description was removed"
+    elif _DEPRECATION_RE.search(cand_norm) and not _DEPRECATION_RE.search(base_norm):
+        reason = "Tool description introduced a deprecation notice"
+    else:
+        sim = text_cosine_similarity(base_norm, cand_norm)
+        if sim < similarity_min:
+            reason = f"Tool description drifted (similarity={sim:.2f} < {similarity_min:.2f})"
+
+    if reason is None:
+        return []
+    return [
+        RegressionFinding(
+            tool_name=tool_name,
+            category=FindingCategory.SCHEMA,
+            severity=severity,
+            json_path="$.description",
+            baseline_excerpt=base_norm,
+            candidate_excerpt=cand_norm,
+            deterministic_reason=reason,
+        )
+    ]
+
+
+def _resolve_description_settings(
+    tool_name: str, comparison: ComparisonConfig | None
+) -> tuple[str, float]:
+    if comparison is None:
+        return "warn", 0.85
+    override = comparison.tool_overrides.get(tool_name)
+    policy = (
+        override.description_drift_policy
+        if override and override.description_drift_policy is not None
+        else comparison.description_drift_policy
+    )
+    sim_min = (
+        override.description_similarity_min
+        if override and override.description_similarity_min is not None
+        else comparison.description_similarity_min
+    )
+    return policy, sim_min
+
+
 def detect_schema_changes(
     baseline_tools: dict[str, ToolDescriptor],
     candidate_tools: dict[str, ToolDescriptor],
+    *,
+    comparison: ComparisonConfig | None = None,
 ) -> list[RegressionFinding]:
-    """Compare declared tool schemas between baseline and candidate."""
+    """Compare declared tool schemas and descriptions between baseline and candidate."""
     findings: list[RegressionFinding] = []
     for name in sorted(baseline_tools):
         base_tool = baseline_tools[name]
@@ -141,5 +208,15 @@ def detect_schema_changes(
         findings.extend(_check_input_schema(name, base_tool.input_schema, cand_tool.input_schema))
         findings.extend(
             _check_output_schema(name, base_tool.output_schema, cand_tool.output_schema)
+        )
+        policy, sim_min = _resolve_description_settings(name, comparison)
+        findings.extend(
+            _check_description_drift(
+                name,
+                base_tool.description,
+                cand_tool.description,
+                policy=policy,
+                similarity_min=sim_min,
+            )
         )
     return findings

@@ -95,6 +95,8 @@ class ToolComparisonOverride(BaseModel):
     top_k_critical: int = Field(default=1, ge=1)
     kendall_tau_min: float = Field(default=0.70, ge=-1.0, le=1.0)
     numeric_relative_tolerance: float | None = Field(default=None, ge=0.0)
+    description_drift_policy: Literal["ignore", "warn", "fail"] | None = None
+    description_similarity_min: float | None = Field(default=None, ge=0.0, le=1.0)
     assertions: list[str] = Field(default_factory=list)
 
 
@@ -115,6 +117,8 @@ class ComparisonConfig(BaseModel):
     detect_unit_scaling: bool = True
     default_order_sensitive: bool = False
     text_similarity_min: float = Field(default=0.75, ge=0.0, le=1.0)
+    description_drift_policy: Literal["ignore", "warn", "fail"] = "warn"
+    description_similarity_min: float = Field(default=0.85, ge=0.0, le=1.0)
     tool_overrides: dict[str, ToolComparisonOverride] = Field(default_factory=dict)
     advisory_llm: AdvisoryLLMConfig = Field(default_factory=AdvisoryLLMConfig)
 
