@@ -118,7 +118,11 @@ def diff_baseline_against_run(
     case_map = {c.case_id: c for c in baseline.cases}
     findings: list[RegressionFinding] = []
     if baseline.tool_schemas and run.candidate_tool_schemas:
-        findings.extend(detect_schema_changes(baseline.tool_schemas, run.candidate_tool_schemas))
+        findings.extend(
+            detect_schema_changes(
+                baseline.tool_schemas, run.candidate_tool_schemas, comparison=comparison
+            )
+        )
 
     for res in run.results:
         if res.status == ReplayCaseStatus.SKIPPED_UNSAFE:
@@ -154,7 +158,9 @@ def diff_baselines(
     comparison: ComparisonConfig,
 ) -> DiffReport:
     """Compare two BehavioralBaselines (schemas + matching cluster cases) deterministically."""
-    findings = detect_schema_changes(baseline.tool_schemas, candidate.tool_schemas)
+    findings = detect_schema_changes(
+        baseline.tool_schemas, candidate.tool_schemas, comparison=comparison
+    )
     noise_masks = set(baseline.noise_masks) | set(candidate.noise_masks)
     cand_by_key = {(c.tool_name, c.cluster_key): c for c in candidate.cases}
 
