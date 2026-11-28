@@ -77,7 +77,7 @@ a:hover { color: var(--accent); text-decoration: underline; }
 .panel { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .panel-header {
   padding: 16px 24px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
 }
 .panel-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .panel-meta { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
@@ -118,6 +118,7 @@ a:hover { color: var(--accent); text-decoration: underline; }
 .diff-row:last-child { border-bottom: none; }
 .diff-row:hover { background: var(--surface-hover); }
 .diff-row td { height: 44px; padding: 8px 24px; vertical-align: middle; }
+.diff-row td[data-label="Path"] { white-space: nowrap; }
 .diff-pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; }
 .diff-old { color: var(--text-dim); text-decoration: line-through; }
 .diff-arrow { color: var(--text-dim); }
@@ -232,6 +233,7 @@ a:hover { color: var(--accent); text-decoration: underline; }
   .tool-group-row th { padding: 8px 16px; }
   .diff-row { padding: 8px 16px; }
   .diff-row td { height: auto; padding: 4px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .diff-row td[data-label="Path"] { white-space: normal; }
   .diff-row td[data-label="Reason"] { flex-direction: column; align-items: stretch; gap: 4px; }
   .diff-row td::before {
     content: attr(data-label); font-family: var(--font-mono); font-size: 11px;

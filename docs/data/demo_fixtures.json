@@ -1,0 +1,542 @@
+{
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "storage": "local"
+  },
+  "baselines": [
+    {
+      "baseline_version": "1.0",
+      "baseline_id": "b383e4d3-6299-463e-aca8-80c46a4b83a2",
+      "server_name": "commerce-mcp",
+      "tag": "v1.0.0",
+      "git_sha": null,
+      "content_hash": "97835a2ea399dfd0bceb3aca89390061ec00bc640268c668da68909bb8d6b2fd",
+      "created_at": "2026-11-28T04:50:33.544683Z",
+      "noise_masks": [
+        "$.request_id"
+      ],
+      "tool_schemas": {
+        "get_balance": {
+          "name": "get_balance",
+          "description": null,
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "output_schema": null,
+          "input_schema_hash": "e36382ec6abef464816fd2d62cfb88a3995907a5e91763b95fe4cbed24380252",
+          "output_schema_hash": null,
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": null,
+            "idempotentHint": null,
+            "openWorldHint": null
+          }
+        },
+        "search_products": {
+          "name": "search_products",
+          "description": null,
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            }
+          },
+          "output_schema": null,
+          "input_schema_hash": "094ec29d007cce150c65abf0756d79ad5b62a1acfdb6e0841f69f1377ef41761",
+          "output_schema_hash": null,
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": null,
+            "idempotentHint": null,
+            "openWorldHint": null
+          }
+        }
+      },
+      "cases": [
+        {
+          "case_id": "36aa0825-cdd6-49b5-9376-2505877efeee",
+          "tool_name": "get_balance",
+          "method": "tools/call",
+          "cluster_key": "get_balance:7ae8126c87f8d61a",
+          "representative_input": {
+            "id": "acct-1"
+          },
+          "omitted_optional_keys": [],
+          "expected_status": "ok",
+          "expected_is_error": false,
+          "expected_payload": {
+            "balance": 1250.0,
+            "currency": "INR",
+            "email": "[REDACTED:EMAIL]",
+            "request_id": "7bca9f43-75da-4730-b6b2-c1fa006adc92"
+          },
+          "expected_schema_profile": {
+            "$.balance": {
+              "json_path": "$.balance",
+              "observed_types": [
+                "float"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.currency": {
+              "json_path": "$.currency",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.email": {
+              "json_path": "$.email",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.request_id": {
+              "json_path": "$.request_id",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            }
+          },
+          "sample_count": 3,
+          "source_interaction_ids": [
+            "736be3be-e8a0-4c09-95d3-5817500027c1",
+            "a1a98721-a3e7-49d7-bc3c-ac7e37225395",
+            "73efc049-96cc-43f1-b165-f6cea7a049a9"
+          ]
+        },
+        {
+          "case_id": "8815bcf5-aba9-4af8-b9e3-57150057a6e2",
+          "tool_name": "search_products",
+          "method": "tools/call",
+          "cluster_key": "search_products:45939493c1625bdd",
+          "representative_input": {
+            "query": "laptop"
+          },
+          "omitted_optional_keys": [],
+          "expected_status": "ok",
+          "expected_is_error": false,
+          "expected_payload": {
+            "request_id": "9da37fb1-0c87-4fe4-9fde-57d14fad1f75",
+            "results": [
+              {
+                "description": "Ultrabook 14",
+                "id": "sku-1",
+                "price": 999
+              },
+              {
+                "description": "Pro Workstation",
+                "id": "sku-2",
+                "price": 1299
+              },
+              {
+                "description": "Budget Laptop",
+                "id": "sku-3",
+                "price": 499
+              }
+            ]
+          },
+          "expected_schema_profile": {
+            "$.request_id": {
+              "json_path": "$.request_id",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.results": {
+              "json_path": "$.results",
+              "observed_types": [
+                "array"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.results[*].description": {
+              "json_path": "$.results[*].description",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.results[*].id": {
+              "json_path": "$.results[*].id",
+              "observed_types": [
+                "str"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            },
+            "$.results[*].price": {
+              "json_path": "$.results[*].price",
+              "observed_types": [
+                "int"
+              ],
+              "presence_ratio": 1.0,
+              "nullable": false,
+              "sample_count": 3
+            }
+          },
+          "sample_count": 3,
+          "source_interaction_ids": [
+            "2baece57-c4e7-4355-80f7-c07b5d128a62",
+            "e271cf2e-bf62-4658-8411-8d9d14d7176b",
+            "e7bf30f1-b5fa-45a8-8de7-0d4967b29412"
+          ]
+        }
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "4028b956-18ee-46ee-aa57-529844d180e2",
+      "baseline_id": "b383e4d3-6299-463e-aca8-80c46a4b83a2",
+      "baseline_tag": "v1.0.0",
+      "target_uri": "python3 examples/mcp_v2.py",
+      "target_git_sha": null,
+      "execution_mode": "subprocess",
+      "started_at": "2026-11-28T04:50:34.118175Z",
+      "completed_at": "2026-11-28T04:50:34.118151Z",
+      "candidate_tool_schemas": {
+        "get_balance": {
+          "name": "get_balance",
+          "description": null,
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "output_schema": null,
+          "input_schema_hash": "e36382ec6abef464816fd2d62cfb88a3995907a5e91763b95fe4cbed24380252",
+          "output_schema_hash": null,
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": null,
+            "idempotentHint": null,
+            "openWorldHint": null
+          }
+        },
+        "search_products": {
+          "name": "search_products",
+          "description": null,
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            }
+          },
+          "output_schema": null,
+          "input_schema_hash": "094ec29d007cce150c65abf0756d79ad5b62a1acfdb6e0841f69f1377ef41761",
+          "output_schema_hash": null,
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": null,
+            "idempotentHint": null,
+            "openWorldHint": null
+          }
+        }
+      },
+      "summary": {
+        "total": 2,
+        "passed": 0,
+        "failed": 2,
+        "warned": 0,
+        "skipped_unsafe": 0,
+        "errored": 0
+      },
+      "results": [
+        {
+          "case_id": "36aa0825-cdd6-49b5-9376-2505877efeee",
+          "tool_name": "get_balance",
+          "cluster_key": "get_balance:7ae8126c87f8d61a",
+          "status": "FAIL",
+          "reason": "Payload/type regression at 2 path(s)",
+          "duration_ms": 19.64,
+          "baseline_status": "ok",
+          "candidate_status": "ok",
+          "candidate_response": {
+            "status": "ok",
+            "is_error": false,
+            "error_code": null,
+            "error_message": null,
+            "structured_content": {
+              "request_id": "76b226e8-7fa4-4ed2-89ba-4ae86824f037",
+              "currency": "INR",
+              "balance": 125000.0,
+              "email": "alice@example.com"
+            },
+            "content_blocks": [
+              {
+                "type": "text",
+                "text": "{\"request_id\": \"76b226e8-7fa4-4ed2-89ba-4ae86824f037\", \"currency\": \"INR\", \"balance\": 125000.0, \"email\": \"alice@example.com\"}"
+              }
+            ],
+            "parsed_text_json": null,
+            "inferred_types": {
+              "$.balance": "float",
+              "$.currency": "str",
+              "$.email": "str",
+              "$.request_id": "str"
+            }
+          },
+          "side_effect_note": null,
+          "diff_paths": [
+            "$.balance",
+            "$.email"
+          ]
+        },
+        {
+          "case_id": "8815bcf5-aba9-4af8-b9e3-57150057a6e2",
+          "tool_name": "search_products",
+          "cluster_key": "search_products:45939493c1625bdd",
+          "status": "FAIL",
+          "reason": "Payload/type regression at 3 path(s)",
+          "duration_ms": 16.791,
+          "baseline_status": "ok",
+          "candidate_status": "ok",
+          "candidate_response": {
+            "status": "ok",
+            "is_error": false,
+            "error_code": null,
+            "error_message": null,
+            "structured_content": {
+              "request_id": "db60ba13-6ea4-44d0-ba4a-cf265f50a5d8",
+              "results": [
+                {
+                  "id": "sku-3",
+                  "price": 499
+                },
+                {
+                  "id": "sku-1",
+                  "price": 999
+                }
+              ]
+            },
+            "content_blocks": [
+              {
+                "type": "text",
+                "text": "{\"request_id\": \"db60ba13-6ea4-44d0-ba4a-cf265f50a5d8\", \"results\": [{\"id\": \"sku-3\", \"price\": 499}, {\"id\": \"sku-1\", \"price\": 999}]}"
+              }
+            ],
+            "parsed_text_json": null,
+            "inferred_types": {
+              "$.request_id": "str",
+              "$.results": "array",
+              "$.results[*].id": "str",
+              "$.results[*].price": "int"
+            }
+          },
+          "side_effect_note": null,
+          "diff_paths": [
+            "$.results[*].description",
+            "$.results[*].id",
+            "$.results[*].price"
+          ]
+        }
+      ]
+    }
+  ],
+  "reports": {
+    "4028b956-18ee-46ee-aa57-529844d180e2": {
+      "verdict": "FAIL",
+      "findings": [
+        {
+          "finding_id": "a3d7703d-be06-481c-a292-da4d1ae1b857",
+          "tool_name": "get_balance",
+          "cluster_key": "get_balance:7ae8126c87f8d61a",
+          "category": "Value/Unit",
+          "severity": "FAIL",
+          "json_path": "$.balance",
+          "baseline_excerpt": 1250.0,
+          "candidate_excerpt": 125000.0,
+          "deterministic_reason": "Likely unit/scale shift (100x): 1250.0 -> 125000.0",
+          "llm_advisory_note": null
+        },
+        {
+          "finding_id": "08a9ffbc-2c72-4efd-b81b-c35264bf1956",
+          "tool_name": "search_products",
+          "cluster_key": "search_products:45939493c1625bdd",
+          "category": "Ordering",
+          "severity": "FAIL",
+          "json_path": "$.results",
+          "baseline_excerpt": [
+            "id:sku-1",
+            "id:sku-2",
+            "id:sku-3"
+          ],
+          "candidate_excerpt": [
+            "id:sku-3",
+            "id:sku-1"
+          ],
+          "deterministic_reason": "Array order shifted at '$.results' (Kendall tau=-1.00, top_1_changed=True)",
+          "llm_advisory_note": null
+        },
+        {
+          "finding_id": "561120cb-f49c-486e-84ef-8ac5222baf2a",
+          "tool_name": "search_products",
+          "cluster_key": "search_products:45939493c1625bdd",
+          "category": "Output",
+          "severity": "FAIL",
+          "json_path": "$.results[*].description",
+          "baseline_excerpt": "Budget Laptop",
+          "candidate_excerpt": null,
+          "deterministic_reason": "Field '$.results[*].description' missing (present in 100% of baseline)",
+          "llm_advisory_note": null
+        },
+        {
+          "finding_id": "21a021da-f6e4-4f10-a786-bf0173a57fe9",
+          "tool_name": "search_products",
+          "cluster_key": "search_products:45939493c1625bdd",
+          "category": "Value/Unit",
+          "severity": "FAIL",
+          "json_path": "$.results[*].price",
+          "baseline_excerpt": 499,
+          "candidate_excerpt": 999,
+          "deterministic_reason": "Numeric delta 100.2% exceeds tolerance 5.0% (499.0 -> 999.0)",
+          "llm_advisory_note": null
+        }
+      ],
+      "agent_impacts": [
+        {
+          "agent_id": "pricing-bot",
+          "tool_name": "search_products",
+          "impact_status": "CONFIRMED_REGRESSION",
+          "matched_jsonpaths": [
+            "$.results[*].price"
+          ],
+          "reasons": [
+            "Numeric delta 100.2% exceeds tolerance 5.0% (499.0 -> 999.0)"
+          ]
+        },
+        {
+          "agent_id": "support-agent",
+          "tool_name": "get_balance",
+          "impact_status": "CONFIRMED_REGRESSION",
+          "matched_jsonpaths": [
+            "$.balance"
+          ],
+          "reasons": [
+            "Likely unit/scale shift (100x): 1250.0 -> 125000.0"
+          ]
+        },
+        {
+          "agent_id": "support-agent",
+          "tool_name": "search_products",
+          "impact_status": "CONFIRMED_REGRESSION",
+          "matched_jsonpaths": [
+            "$.results",
+            "$.results[*].description"
+          ],
+          "reasons": [
+            "Array order shifted at '$.results' (Kendall tau=-1.00, top_1_changed=True)",
+            "Field '$.results[*].description' missing (present in 100% of baseline)"
+          ]
+        }
+      ],
+      "blast_radii": [
+        {
+          "tool_name": "get_balance",
+          "affected_agents": 1,
+          "total_agents": 1,
+          "blast_radius": 1.0,
+          "call_volume": 3,
+          "risk_score": 3.0
+        },
+        {
+          "tool_name": "search_products",
+          "affected_agents": 2,
+          "total_agents": 2,
+          "blast_radius": 1.0,
+          "call_volume": 3,
+          "risk_score": 3.0
+        }
+      ],
+      "summary": {
+        "PASS": 0,
+        "WARN": 0,
+        "FAIL": 4
+      }
+    }
+  },
+  "histories": {
+    "get_balance": {
+      "tool_name": "get_balance",
+      "total_recorded_calls": 3,
+      "error_rate": 0.0,
+      "dependent_agents": [
+        "support-agent"
+      ],
+      "top_parameter_combinations": [
+        {
+          "arguments": "{\"id\":\"acct-1\"}",
+          "count": 3
+        }
+      ],
+      "timeline": [
+        {
+          "run_id": "4028b956-18ee-46ee-aa57-529844d180e2",
+          "baseline_tag": "v1.0.0",
+          "target_git_sha": null,
+          "started_at": "2026-11-28T04:50:34.118175+00:00",
+          "total_cases": 1,
+          "failed_cases": 1,
+          "failure_rate": 1.0
+        }
+      ]
+    },
+    "search_products": {
+      "tool_name": "search_products",
+      "total_recorded_calls": 3,
+      "error_rate": 0.0,
+      "dependent_agents": [
+        "support-agent"
+      ],
+      "top_parameter_combinations": [
+        {
+          "arguments": "{\"query\":\"laptop\"}",
+          "count": 3
+        }
+      ],
+      "timeline": [
+        {
+          "run_id": "4028b956-18ee-46ee-aa57-529844d180e2",
+          "baseline_tag": "v1.0.0",
+          "target_git_sha": null,
+          "started_at": "2026-11-28T04:50:34.118175+00:00",
+          "total_cases": 1,
+          "failed_cases": 1,
+          "failure_rate": 1.0
+        }
+      ]
+    }
+  }
+}
