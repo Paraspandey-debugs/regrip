@@ -267,7 +267,7 @@ The action publishes a job summary, posts a sticky `<!-- regrip-report -->` PR c
 |:---|:---|
 | `regrip init` | Initialize `regrip.yaml` and `.regrip/` workspace |
 | `regrip record` | Capture MCP stdio or Streamable HTTP interactions |
-| `regrip baseline build / inspect / export / import` | Manage baseline bundles (`.regrip-baseline.tar.zst`) |
+| `regrip baseline build / inspect / diff / export / import` | Manage and compare baseline bundles (`.regrip-baseline.tar.zst`) |
 | `regrip replay` | Safely replay a baseline against a candidate target |
 | `regrip diff` | Run the 9-category deterministic diff engine |
 | `regrip impact` | Compute per-agent verdict matrix |

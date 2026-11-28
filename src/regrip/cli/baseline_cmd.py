@@ -9,12 +9,15 @@ from typing import Annotated
 import typer
 
 from regrip.adapters.baseline_bundle import export_baseline_bundle, import_baseline_bundle
+from regrip.adapters.baseline_resolver import resolve_baseline
 from regrip.adapters.config_store import load_config
 from regrip.adapters.replay_runner import select_driver
 from regrip.adapters.sqlite_store import SQLiteStore
-from regrip.cli.formatters import format_baseline_summary
+from regrip.cli.formatters import format_baseline_summary, format_diff_report
 from regrip.core.baseline_builder import build_baseline
+from regrip.core.detectors import diff_baselines
 from regrip.types.baseline import BehavioralBaseline, ToolDescriptor
+from regrip.types.diff import FindingSeverity
 from regrip.types.errors import RegripError
 
 baseline_app = typer.Typer(help="Build and inspect behavioral baselines.")
@@ -143,6 +146,40 @@ def import_cmd(
         baseline = import_baseline_bundle(bundle)
         store.save_baseline(baseline)
         typer.echo(format_baseline_summary(baseline))
+    except RegripError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@baseline_app.command("diff")
+def baseline_diff_cmd(
+    baseline_a: Annotated[str, typer.Argument(help="Base baseline tag, file path, or URI.")],
+    baseline_b: Annotated[str, typer.Argument(help="Candidate baseline tag, file path, or URI.")],
+    server: Annotated[
+        str | None, typer.Option("--server", help="Server name for tag lookup.")
+    ] = None,
+    output_format: Annotated[
+        str, typer.Option("--format", help="Output format: text or json.")
+    ] = "text",
+    config_path: Annotated[
+        Path | None, typer.Option("--config", help="Path to regrip.yaml.")
+    ] = None,
+) -> None:
+    """Compare two stored baselines directly (schemas, masks, and cluster diffs)."""
+    try:
+        cfg = load_config(config_path)
+        store = SQLiteStore(cfg.storage, cfg.capture)
+        base = resolve_baseline(baseline_a, server=server, store=store)
+        cand = resolve_baseline(baseline_b, server=server, store=store)
+        report = diff_baselines(base, cand, cfg.comparison)
+        if output_format.strip().lower() == "json":
+            typer.echo(report.model_dump_json(indent=2))
+        else:
+            typer.echo(format_diff_report(report))
+        if report.verdict == FindingSeverity.FAIL:
+            raise typer.Exit(code=1)
+        if report.verdict == FindingSeverity.WARN:
+            raise typer.Exit(code=2)
     except RegripError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
